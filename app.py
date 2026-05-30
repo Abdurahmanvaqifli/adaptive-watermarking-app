@@ -300,6 +300,25 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
 # =========================
 # CONTEXT-AWARE ALPHA RULE
 # =========================
+# =========================
+# CONTEXT-AWARE ALPHA RULE
+# =========================
+
+def predict_alpha_by_domain(domain):
+    if domain in ["Medical", "Tibbi"]:
+        return 10
+
+    elif domain in ["Cultural Heritage", "Mədəni irs"]:
+        return 10
+
+    elif domain in ["Satellite / GIS", "Peyk / GIS"]:
+        return 20
+
+    elif domain in ["Natural", "Təbii"]:
+        return 10
+
+    else:
+        return 10
 
 recommended_alpha = predict_alpha_by_domain(domain)
 
