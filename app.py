@@ -32,7 +32,7 @@ T = {
         "noise_strength": "Səs-küy intensivliyi",
         "blur_kernel": "Bulanıqlıq nüvəsi",
         "upload_host": "Host şəkli yüklə",
-        "upload_wm": "Su nişanı yüklə (istəyə bağlı)",
+        "upload_wm": "Su nişanı yüklə",
         "adaptive_alpha": "Adaptiv Alpha",
         "alpha_selection": "Alpha seçimi",
         "recommended": "Tövsiyə olunan",
@@ -74,7 +74,7 @@ T = {
         "noise_strength": "Noise Strength",
         "blur_kernel": "Blur Kernel",
         "upload_host": "Upload host image",
-        "upload_wm": "Upload watermark image (optional)",
+        "upload_wm": "Upload watermark image",
         "adaptive_alpha": "Adaptive Alpha",
         "alpha_selection": "Alpha selection",
         "recommended": "Recommended",
@@ -144,18 +144,19 @@ st.title(t["title"])
 st.write(t["desc"])
 
 # =========================
-# DEFAULT WATERMARK
+# WATERMARK CREATION
 # =========================
 
 def create_default_watermark():
     watermark = np.zeros((32, 32), dtype=np.uint8)
     cv2.putText(watermark, "W", (5, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.9, 1, 2)
     return watermark
+
+
 def create_text_watermark(text):
     watermark = np.zeros((32, 32), dtype=np.uint8)
 
     text = text.strip()
-
     if text == "":
         text = "W"
 
@@ -170,6 +171,7 @@ def create_text_watermark(text):
     )
 
     return watermark
+
 # =========================
 # METRICS
 # =========================
@@ -180,17 +182,22 @@ def calculate_psnr(original, processed):
         return 100
     return 20 * np.log10(255.0 / np.sqrt(mse))
 
+
 def calculate_ssim(original, processed):
     return ssim(original, processed, data_range=255)
+
 
 def calculate_ber(original_wm, extracted_wm):
     return np.sum(original_wm != extracted_wm) / original_wm.size
 
+
 def calculate_correlation(original_wm, extracted_wm):
     o = original_wm.flatten()
     e = extracted_wm.flatten()
+
     if np.std(o) == 0 or np.std(e) == 0:
         return 0
+
     return np.corrcoef(o, e)[0, 1]
 
 # =========================
@@ -209,7 +216,9 @@ def normalize_attack_name(attack):
         "Fırlatma": "Rotation",
         "Kəsmə": "Cropping",
     }
+
     return mapping.get(attack, attack)
+
 
 def apply_attack(image, attack_type, param):
     attack_type = normalize_attack_name(attack_type)
@@ -255,11 +264,18 @@ def apply_attack(image, attack_type, param):
         h, w = attacked.shape
         center = (w // 2, h // 2)
         matrix = cv2.getRotationMatrix2D(center, float(param), 1.0)
-        attacked = cv2.warpAffine(attacked, matrix, (w, h), borderMode=cv2.BORDER_REFLECT)
+
+        attacked = cv2.warpAffine(
+            attacked,
+            matrix,
+            (w, h),
+            borderMode=cv2.BORDER_REFLECT
+        )
 
     elif attack_type == "Cropping":
         crop_percent = float(param)
         h, w = attacked.shape
+
         crop_h = int(h * crop_percent)
         crop_w = int(w * crop_percent)
 
@@ -275,6 +291,7 @@ def apply_attack(image, attack_type, param):
 def embed_watermark_svd_block(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
     watermarked = host_float.copy()
+
     wm_h, wm_w = watermark_binary.shape
     block_size = 8
 
@@ -282,6 +299,7 @@ def embed_watermark_svd_block(host_gray, watermark_binary, alpha=10):
         for j in range(wm_w):
             x = i * block_size
             y = j * block_size
+
             block = watermarked[x:x+block_size, y:y+block_size]
 
             U, S, Vt = np.linalg.svd(block, full_matrices=False)
@@ -296,11 +314,14 @@ def embed_watermark_svd_block(host_gray, watermark_binary, alpha=10):
 
     return np.uint8(np.clip(watermarked, 0, 255))
 
+
 def extract_watermark_svd_block(original_image, watermarked_image, watermark_shape):
     original_float = np.float32(original_image)
     watermarked_float = np.float32(watermarked_image)
+
     wm_h, wm_w = watermark_shape
     extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
+
     block_size = 8
 
     for i in range(wm_h):
@@ -449,27 +470,41 @@ if uploaded_file is not None:
     img_rgb = cv2.resize(img_rgb, (512, 512))
     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
 
-  if watermark_type == t["upload_logo"] and watermark_file is not None:
-    wm_img = Image.open(watermark_file).convert("L")
-    wm_img = np.array(wm_img)
-    wm_img = cv2.resize(wm_img, (32, 32))
+    if watermark_type == t["upload_logo"] and watermark_file is not None:
+        wm_img = Image.open(watermark_file).convert("L")
+        wm_img = np.array(wm_img)
+        wm_img = cv2.resize(wm_img, (32, 32))
 
-    _, watermark_binary = cv2.threshold(
-        wm_img,
-        127,
-        1,
-        cv2.THRESH_BINARY
+        _, watermark_binary = cv2.threshold(
+            wm_img,
+            127,
+            1,
+            cv2.THRESH_BINARY
+        )
+
+    elif watermark_type == t["text_watermark"]:
+        watermark_binary = create_text_watermark(watermark_text)
+
+    else:
+        watermark_binary = create_default_watermark()
+
+    watermarked = embed_watermark_svd_block(
+        img_gray,
+        watermark_binary,
+        alpha=predicted_alpha
     )
 
-elif watermark_type == t["text_watermark"]:
-    watermark_binary = create_text_watermark(watermark_text)
+    attacked = apply_attack(
+        watermarked,
+        attack_type,
+        attack_param
+    )
 
-else:
-    watermark_binary = create_default_watermark()
-
-    watermarked = embed_watermark_svd_block(img_gray, watermark_binary, alpha=predicted_alpha)
-    attacked = apply_attack(watermarked, attack_type, attack_param)
-    extracted = extract_watermark_svd_block(img_gray, attacked, watermark_binary.shape)
+    extracted = extract_watermark_svd_block(
+        img_gray,
+        attacked,
+        watermark_binary.shape
+    )
 
     psnr_val = calculate_psnr(img_gray, watermarked)
     ssim_val = calculate_ssim(img_gray, watermarked)
@@ -494,19 +529,33 @@ else:
 
     with c1:
         st.image(img_gray, caption=t["original"], clamp=True)
+
     with c2:
         st.image(watermark_binary * 255, caption=t["input_wm"], clamp=True)
+
     with c3:
         st.image(watermarked, caption=f"{t['watermarked']} α={predicted_alpha}", clamp=True)
+
     with c4:
         st.image(attacked, caption=f"{t['after_attack']}: {attack_type}", clamp=True)
+
     with c5:
         st.image(extracted * 255, caption=t["extracted"], clamp=True)
 
     st.subheader(t["result_table"])
 
     result_df = pd.DataFrame({
-        t["metric"]: ["Domain", "Method", "Recommended Alpha", "Selected Alpha", "Attack", "PSNR", "SSIM", "BER", "Correlation"],
+        t["metric"]: [
+            "Domain",
+            "Method",
+            "Recommended Alpha",
+            "Selected Alpha",
+            "Attack",
+            "PSNR",
+            "SSIM",
+            "BER",
+            "Correlation"
+        ],
         t["value"]: [
             domain,
             "Block-SVD",
