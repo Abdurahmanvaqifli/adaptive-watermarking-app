@@ -94,8 +94,28 @@ domain_options = {
 }
 
 attack_options = {
-    "az": ["Hücum yoxdur", "JPEG sıxılma", "Gaussian səs-küy", "Gaussian bulanıqlıq"],
-    "en": ["No Attack", "JPEG Compression", "Gaussian Noise", "Gaussian Blur"]
+    "az": [
+        "Hücum yoxdur",
+        "JPEG sıxılma",
+        "Gaussian səs-küy",
+        "Salt & Pepper səs-küy",
+        "Gaussian bulanıqlıq",
+        "Parlaqlıq dəyişikliyi",
+        "Kontrast dəyişikliyi",
+        "Fırlatma",
+        "Kəsmə"
+    ],
+    "en": [
+        "No Attack",
+        "JPEG Compression",
+        "Gaussian Noise",
+        "Salt & Pepper Noise",
+        "Gaussian Blur",
+        "Brightness Change",
+        "Contrast Change",
+        "Rotation",
+        "Cropping"
+    ]
 }
 
 st.title(t["title"])
@@ -142,7 +162,12 @@ def normalize_attack_name(attack):
         "Hücum yoxdur": "No Attack",
         "JPEG sıxılma": "JPEG Compression",
         "Gaussian səs-küy": "Gaussian Noise",
+        "Salt & Pepper səs-küy": "Salt & Pepper Noise",
         "Gaussian bulanıqlıq": "Gaussian Blur",
+        "Parlaqlıq dəyişikliyi": "Brightness Change",
+        "Kontrast dəyişikliyi": "Contrast Change",
+        "Fırlatma": "Rotation",
+        "Kəsmə": "Cropping",
     }
     return mapping.get(attack, attack)
 
@@ -160,11 +185,65 @@ def apply_attack(image, attack_type, param):
         attacked = attacked + noise
         attacked = np.clip(attacked, 0, 255).astype(np.uint8)
 
+    elif attack_type == "Salt & Pepper Noise":
+        amount = param
+        noisy = attacked.copy()
+
+        num_salt = int(amount * attacked.size * 0.5)
+        coords = [
+            np.random.randint(0, i - 1, num_salt)
+            for i in attacked.shape
+        ]
+        noisy[coords[0], coords[1]] = 255
+
+        num_pepper = int(amount * attacked.size * 0.5)
+        coords = [
+            np.random.randint(0, i - 1, num_pepper)
+            for i in attacked.shape
+        ]
+        noisy[coords[0], coords[1]] = 0
+
+        attacked = noisy
+
     elif attack_type == "Gaussian Blur":
         k = int(param)
         if k % 2 == 0:
             k += 1
         attacked = cv2.GaussianBlur(attacked, (k, k), 0)
+
+    elif attack_type == "Brightness Change":
+        attacked = cv2.convertScaleAbs(attacked, alpha=1.0, beta=int(param))
+
+    elif attack_type == "Contrast Change":
+        attacked = cv2.convertScaleAbs(attacked, alpha=float(param), beta=0)
+
+    elif attack_type == "Rotation":
+        h, w = attacked.shape
+        center = (w // 2, h // 2)
+
+        matrix = cv2.getRotationMatrix2D(center, float(param), 1.0)
+
+        attacked = cv2.warpAffine(
+            attacked,
+            matrix,
+            (w, h),
+            borderMode=cv2.BORDER_REFLECT
+        )
+
+    elif attack_type == "Cropping":
+        crop_percent = float(param)
+
+        h, w = attacked.shape
+
+        crop_h = int(h * crop_percent)
+        crop_w = int(w * crop_percent)
+
+        cropped = attacked[
+            crop_h:h-crop_h,
+            crop_w:w-crop_w
+        ]
+
+        attacked = cv2.resize(cropped, (w, h))
 
     return attacked
 
@@ -246,10 +325,33 @@ attack_type_normalized = normalize_attack_name(attack_type)
 
 if attack_type_normalized == "JPEG Compression":
     attack_param = st.sidebar.slider(t["jpeg_quality"], 10, 100, 70)
+
 elif attack_type_normalized == "Gaussian Noise":
     attack_param = st.sidebar.slider(t["noise_strength"], 0.01, 0.10, 0.03)
+
+elif attack_type_normalized == "Salt & Pepper Noise":
+    label = "Salt & Pepper intensivliyi" if lang == "az" else "Salt & Pepper Strength"
+    attack_param = st.sidebar.slider(label, 0.01, 0.10, 0.03)
+
 elif attack_type_normalized == "Gaussian Blur":
     attack_param = st.sidebar.slider(t["blur_kernel"], 3, 9, 5, step=2)
+
+elif attack_type_normalized == "Brightness Change":
+    label = "Parlaqlıq səviyyəsi" if lang == "az" else "Brightness Level"
+    attack_param = st.sidebar.slider(label, -80, 80, 30)
+
+elif attack_type_normalized == "Contrast Change":
+    label = "Kontrast səviyyəsi" if lang == "az" else "Contrast Level"
+    attack_param = st.sidebar.slider(label, 0.5, 2.0, 1.3)
+
+elif attack_type_normalized == "Rotation":
+    label = "Fırlatma bucağı" if lang == "az" else "Rotation Angle"
+    attack_param = st.sidebar.slider(label, -30, 30, 10)
+
+elif attack_type_normalized == "Cropping":
+    label = "Kəsmə faizi" if lang == "az" else "Cropping Percentage"
+    attack_param = st.sidebar.slider(label, 0.05, 0.30, 0.10)
+
 else:
     attack_param = 0
 
