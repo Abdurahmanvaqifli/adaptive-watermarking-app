@@ -33,9 +33,15 @@ T = {
         "blur_kernel": "Bulanıqlıq nüvəsi",
         "upload_host": "Host şəkli yüklə",
         "upload_wm": "Su nişanı yüklə (istəyə bağlı)",
+        "adaptive_alpha": "Adaptiv Alpha",
+        "alpha_selection": "Alpha seçimi",
+        "recommended": "Tövsiyə olunan",
+        "manual": "Əl ilə seçim",
+        "alpha_value": "Alpha dəyəri",
         "adaptive_decision": "Adaptiv qərar",
         "selected_domain": "Seçilmiş domen",
-        "predicted_alpha": "Təyin edilmiş alpha",
+        "recommended_alpha": "Tövsiyə olunan alpha",
+        "selected_alpha": "İstifadə olunan alpha",
         "method": "Embedding metodu",
         "images": "Şəkillər",
         "original": "Orijinal şəkil",
@@ -64,9 +70,15 @@ T = {
         "blur_kernel": "Blur Kernel",
         "upload_host": "Upload host image",
         "upload_wm": "Upload watermark image (optional)",
+        "adaptive_alpha": "Adaptive Alpha",
+        "alpha_selection": "Alpha selection",
+        "recommended": "Recommended",
+        "manual": "Manual",
+        "alpha_value": "Alpha value",
         "adaptive_decision": "Adaptive Decision",
         "selected_domain": "Selected domain",
-        "predicted_alpha": "Predicted alpha",
+        "recommended_alpha": "Recommended alpha",
+        "selected_alpha": "Selected alpha",
         "method": "Embedding method",
         "images": "Images",
         "original": "Original Image",
@@ -186,21 +198,15 @@ def apply_attack(image, attack_type, param):
         attacked = np.clip(attacked, 0, 255).astype(np.uint8)
 
     elif attack_type == "Salt & Pepper Noise":
-        amount = param
+        amount = float(param)
         noisy = attacked.copy()
 
         num_salt = int(amount * attacked.size * 0.5)
-        coords = [
-            np.random.randint(0, i - 1, num_salt)
-            for i in attacked.shape
-        ]
+        coords = [np.random.randint(0, i - 1, num_salt) for i in attacked.shape]
         noisy[coords[0], coords[1]] = 255
 
         num_pepper = int(amount * attacked.size * 0.5)
-        coords = [
-            np.random.randint(0, i - 1, num_pepper)
-            for i in attacked.shape
-        ]
+        coords = [np.random.randint(0, i - 1, num_pepper) for i in attacked.shape]
         noisy[coords[0], coords[1]] = 0
 
         attacked = noisy
@@ -220,29 +226,16 @@ def apply_attack(image, attack_type, param):
     elif attack_type == "Rotation":
         h, w = attacked.shape
         center = (w // 2, h // 2)
-
         matrix = cv2.getRotationMatrix2D(center, float(param), 1.0)
-
-        attacked = cv2.warpAffine(
-            attacked,
-            matrix,
-            (w, h),
-            borderMode=cv2.BORDER_REFLECT
-        )
+        attacked = cv2.warpAffine(attacked, matrix, (w, h), borderMode=cv2.BORDER_REFLECT)
 
     elif attack_type == "Cropping":
         crop_percent = float(param)
-
         h, w = attacked.shape
-
         crop_h = int(h * crop_percent)
         crop_w = int(w * crop_percent)
 
-        cropped = attacked[
-            crop_h:h-crop_h,
-            crop_w:w-crop_w
-        ]
-
+        cropped = attacked[crop_h:h-crop_h, crop_w:w-crop_w]
         attacked = cv2.resize(cropped, (w, h))
 
     return attacked
@@ -300,46 +293,18 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
 # =========================
 # CONTEXT-AWARE ALPHA RULE
 # =========================
-# =========================
-# CONTEXT-AWARE ALPHA RULE
-# =========================
 
 def predict_alpha_by_domain(domain):
     if domain in ["Medical", "Tibbi"]:
         return 10
-
     elif domain in ["Cultural Heritage", "Mədəni irs"]:
         return 10
-
     elif domain in ["Satellite / GIS", "Peyk / GIS"]:
         return 20
-
     elif domain in ["Natural", "Təbii"]:
         return 10
-
     else:
         return 10
-
-recommended_alpha = predict_alpha_by_domain(domain)
-
-st.sidebar.markdown("---")
-st.sidebar.write("### Adaptive Alpha")
-
-alpha_mode = st.sidebar.radio(
-    "Alpha selection",
-    ["Recommended", "Manual"]
-)
-
-if alpha_mode == "Recommended":
-    predicted_alpha = recommended_alpha
-else:
-    predicted_alpha = st.sidebar.slider(
-        "Alpha value",
-        5,
-        50,
-        recommended_alpha,
-        step=5
-    )
 
 # =========================
 # SIDEBAR SETTINGS
@@ -349,6 +314,27 @@ st.sidebar.header(t["settings"])
 
 domain = st.sidebar.selectbox(t["domain"], domain_options[lang])
 attack_type = st.sidebar.selectbox(t["attack"], attack_options[lang])
+
+recommended_alpha = predict_alpha_by_domain(domain)
+
+st.sidebar.markdown("---")
+st.sidebar.write(f"### {t['adaptive_alpha']}")
+
+alpha_mode = st.sidebar.radio(
+    t["alpha_selection"],
+    [t["recommended"], t["manual"]]
+)
+
+if alpha_mode == t["recommended"]:
+    predicted_alpha = recommended_alpha
+else:
+    predicted_alpha = st.sidebar.slider(
+        t["alpha_value"],
+        5,
+        50,
+        recommended_alpha,
+        step=5
+    )
 
 attack_type_normalized = normalize_attack_name(attack_type)
 
@@ -415,11 +401,8 @@ if uploaded_file is not None:
     else:
         watermark_binary = create_default_watermark()
 
-    predicted_alpha = predict_alpha_by_domain(domain)
-
     watermarked = embed_watermark_svd_block(img_gray, watermark_binary, alpha=predicted_alpha)
     attacked = apply_attack(watermarked, attack_type, attack_param)
-
     extracted = extract_watermark_svd_block(img_gray, attacked, watermark_binary.shape)
 
     psnr_val = calculate_psnr(img_gray, watermarked)
@@ -429,7 +412,8 @@ if uploaded_file is not None:
 
     st.subheader(t["adaptive_decision"])
     st.write(f"{t['selected_domain']}: **{domain}**")
-    st.write(f"{t['predicted_alpha']}: **{predicted_alpha}**")
+    st.write(f"{t['recommended_alpha']}: **{recommended_alpha}**")
+    st.write(f"{t['selected_alpha']}: **{predicted_alpha}**")
     st.write(f"{t['method']}: **Block-SVD**")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -456,10 +440,11 @@ if uploaded_file is not None:
     st.subheader(t["result_table"])
 
     result_df = pd.DataFrame({
-        t["metric"]: ["Domain", "Method", "Alpha", "Attack", "PSNR", "SSIM", "BER", "Correlation"],
+        t["metric"]: ["Domain", "Method", "Recommended Alpha", "Selected Alpha", "Attack", "PSNR", "SSIM", "BER", "Correlation"],
         t["value"]: [
             domain,
             "Block-SVD",
+            recommended_alpha,
             predicted_alpha,
             attack_type,
             round(psnr_val, 4),
