@@ -301,16 +301,26 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
 # CONTEXT-AWARE ALPHA RULE
 # =========================
 
-def predict_alpha_by_domain(domain):
-    if domain in ["Medical", "Tibbi"]:
-        return 10
-    elif domain in ["Cultural Heritage", "Mədəni irs"]:
-        return 10
-    elif domain in ["Satellite / GIS", "Peyk / GIS"]:
-        return 20
-    elif domain in ["Natural", "Təbii"]:
-        return 10
-    return 10
+recommended_alpha = predict_alpha_by_domain(domain)
+
+st.sidebar.markdown("---")
+st.sidebar.write("### Adaptive Alpha")
+
+alpha_mode = st.sidebar.radio(
+    "Alpha selection",
+    ["Recommended", "Manual"]
+)
+
+if alpha_mode == "Recommended":
+    predicted_alpha = recommended_alpha
+else:
+    predicted_alpha = st.sidebar.slider(
+        "Alpha value",
+        5,
+        50,
+        recommended_alpha,
+        step=5
+    )
 
 # =========================
 # SIDEBAR SETTINGS
