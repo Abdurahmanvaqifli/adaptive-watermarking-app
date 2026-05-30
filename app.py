@@ -58,6 +58,11 @@ T = {
         "ssim_exp": "SSIM — struktur oxşarlığını ölçür. 1-ə yaxın olması daha yaxşıdır.",
         "ber_exp": "BER — çıxarılan su nişanında bit səhvlərinin nisbətini göstərir. Kiçik olması daha yaxşıdır.",
         "corr_exp": "Correlation — orijinal və çıxarılan su nişanının oxşarlığını ölçür. 1-ə yaxın olması daha yaxşıdır.",
+        "watermark_type": "Su nişanı növü",
+        "default_watermark": "Standart su nişanı",
+        "upload_logo": "Logo yüklə",
+        "text_watermark": "Mətn su nişanı",
+        "enter_watermark_text": "Su nişanı mətnini daxil edin",
     },
     "en": {
         "title": "Context-Aware Adaptive Invisible Watermarking System",
@@ -95,6 +100,11 @@ T = {
         "ssim_exp": "SSIM measures structural similarity. Values closer to 1 are better.",
         "ber_exp": "BER measures the bit error rate of the extracted watermark. Lower is better.",
         "corr_exp": "Correlation measures similarity between the original and extracted watermark. Values closer to 1 are better.",
+        "watermark_type": "Watermark type",
+        "default_watermark": "Default watermark",
+        "upload_logo": "Upload logo",
+        "text_watermark": "Text watermark",
+        "enter_watermark_text": "Enter watermark text",
     }
 }
 
@@ -141,7 +151,25 @@ def create_default_watermark():
     watermark = np.zeros((32, 32), dtype=np.uint8)
     cv2.putText(watermark, "W", (5, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.9, 1, 2)
     return watermark
+def create_text_watermark(text):
+    watermark = np.zeros((32, 32), dtype=np.uint8)
 
+    text = text.strip()
+
+    if text == "":
+        text = "W"
+
+    cv2.putText(
+        watermark,
+        text[:2],
+        (3, 22),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        1,
+        1
+    )
+
+    return watermark
 # =========================
 # METRICS
 # =========================
@@ -370,8 +398,36 @@ elif attack_type_normalized == "Cropping":
 else:
     attack_param = 0
 
-uploaded_file = st.file_uploader(t["upload_host"], type=["png", "jpg", "jpeg"], key="host_upload")
-watermark_file = st.file_uploader(t["upload_wm"], type=["png", "jpg", "jpeg"], key="watermark_upload")
+uploaded_file = st.file_uploader(
+    t["upload_host"],
+    type=["png", "jpg", "jpeg"],
+    key="host_upload"
+)
+
+watermark_type = st.sidebar.radio(
+    t["watermark_type"],
+    [
+        t["default_watermark"],
+        t["upload_logo"],
+        t["text_watermark"]
+    ]
+)
+
+watermark_file = None
+watermark_text = ""
+
+if watermark_type == t["upload_logo"]:
+    watermark_file = st.file_uploader(
+        t["upload_wm"],
+        type=["png", "jpg", "jpeg"],
+        key="watermark_upload"
+    )
+
+elif watermark_type == t["text_watermark"]:
+    watermark_text = st.sidebar.text_input(
+        t["enter_watermark_text"],
+        value="AV"
+    )
 
 # =========================
 # METRIC EXPLANATIONS
@@ -393,13 +449,23 @@ if uploaded_file is not None:
     img_rgb = cv2.resize(img_rgb, (512, 512))
     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
 
-    if watermark_file is not None:
-        wm_img = Image.open(watermark_file).convert("L")
-        wm_img = np.array(wm_img)
-        wm_img = cv2.resize(wm_img, (32, 32))
-        _, watermark_binary = cv2.threshold(wm_img, 127, 1, cv2.THRESH_BINARY)
-    else:
-        watermark_binary = create_default_watermark()
+  if watermark_type == t["upload_logo"] and watermark_file is not None:
+    wm_img = Image.open(watermark_file).convert("L")
+    wm_img = np.array(wm_img)
+    wm_img = cv2.resize(wm_img, (32, 32))
+
+    _, watermark_binary = cv2.threshold(
+        wm_img,
+        127,
+        1,
+        cv2.THRESH_BINARY
+    )
+
+elif watermark_type == t["text_watermark"]:
+    watermark_binary = create_text_watermark(watermark_text)
+
+else:
+    watermark_binary = create_default_watermark()
 
     watermarked = embed_watermark_svd_block(img_gray, watermark_binary, alpha=predicted_alpha)
     attacked = apply_attack(watermarked, attack_type, attack_param)
