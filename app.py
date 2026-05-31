@@ -2,6 +2,7 @@ import streamlit as st
 import cv2
 import numpy as np
 import pandas as pd
+import pywt
 from PIL import Image
 from skimage.metrics import structural_similarity as ssim
 
@@ -157,8 +158,8 @@ def create_default_watermark():
 
 def create_text_watermark(text):
     watermark = np.zeros((32, 32), dtype=np.uint8)
-
     text = text.strip()
+
     if text == "":
         text = "W"
 
@@ -218,7 +219,6 @@ def normalize_attack_name(attack):
         "Fırlatma": "Rotation",
         "Kəsmə": "Cropping",
     }
-
     return mapping.get(attack, attack)
 
 
@@ -352,12 +352,7 @@ def embed_watermark_dct_multi(host_gray, watermark_binary, alpha=10):
     wm_h, wm_w = watermark_binary.shape
     block_size = 8
 
-    coeffs = [
-        (3, 3),
-        (3, 4),
-        (4, 3),
-        (4, 4)
-    ]
+    coeffs = [(3, 3), (3, 4), (4, 3), (4, 4)]
 
     for i in range(wm_h):
         for j in range(wm_w):
@@ -389,13 +384,7 @@ def extract_watermark_dct_multi(original_image, watermarked_image, watermark_sha
     extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
 
     block_size = 8
-
-    coeffs = [
-        (3, 3),
-        (3, 4),
-        (4, 3),
-        (4, 4)
-    ]
+    coeffs = [(3, 3), (3, 4), (4, 3), (4, 4)]
 
     for i in range(wm_h):
         for j in range(wm_w):
@@ -408,17 +397,323 @@ def extract_watermark_dct_multi(original_image, watermarked_image, watermark_sha
             dct_original = cv2.dct(original_block)
             dct_watermarked = cv2.dct(watermarked_block)
 
-            diffs = []
-
-            for c in coeffs:
-                diffs.append(dct_watermarked[c] - dct_original[c])
-
+            diffs = [dct_watermarked[c] - dct_original[c] for c in coeffs]
             avg_diff = np.mean(diffs)
 
-            if avg_diff > 0:
-                extracted[i, j] = 1
+            extracted[i, j] = 1 if avg_diff > 0 else 0
+
+    return extracted
+
+# =========================
+# IMPROVED DWT WATERMARKING
+# =========================
+
+def embed_watermark_dwt_ll(host_gray, watermark_binary, alpha=10):
+    host_float = np.float32(host_gray)
+
+    LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
+
+    wm_resized = cv2.resize(
+        watermark_binary.astype(np.float32),
+        (LL.shape[1], LL.shape[0]),
+        interpolation=cv2.INTER_NEAREST
+    )
+
+    wm_signal = np.where(wm_resized > 0.5, 1, -1)
+
+    LL_w = LL + alpha * wm_signal
+
+    watermarked = pywt.idwt2(
+        (LL_w, (LH, HL, HH)),
+        "haar"
+    )
+
+    return np.uint8(np.clip(watermarked, 0, 255))
+
+
+def extract_watermark_dwt_ll(original_image, watermarked_image, watermark_shape):
+    original_float = np.float32(original_image)
+    watermarked_float = np.float32(watermarked_image)
+
+    LL_o, _ = pywt.dwt2(original_float, "haar")
+    LL_w, _ = pywt.dwt2(watermarked_float, "haar")
+
+    diff = LL_w - LL_o
+
+    extracted_large = np.where(diff > 0, 1, 0).astype(np.uint8)
+
+    extracted = cv2.resize(
+        extracted_large,
+        (watermark_shape[1], watermark_shape[0]),
+        interpolation=cv2.INTER_NEAREST
+    )
+
+    return extracted
+
+# =========================
+# DCT-DWT WATERMARKING
+# =========================
+
+def embed_watermark_dct_dwt(host_gray, watermark_binary, alpha=10):
+    host_float = np.float32(host_gray)
+
+    LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
+
+    LL_w = LL.copy()
+
+    wm_h, wm_w = watermark_binary.shape
+    block_size = 8
+    coeffs = [(3, 3), (4, 4)]
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block = LL_w[x:x+block_size, y:y+block_size]
+            dct_block = cv2.dct(block)
+
+            bit = watermark_binary[i, j]
+
+            for c in coeffs:
+                if bit == 1:
+                    dct_block[c] += alpha
+                else:
+                    dct_block[c] -= alpha
+
+            LL_w[x:x+block_size, y:y+block_size] = cv2.idct(dct_block)
+
+    watermarked = pywt.idwt2(
+        (LL_w, (LH, HL, HH)),
+        "haar"
+    )
+
+    return np.uint8(np.clip(watermarked, 0, 255))
+
+
+def extract_watermark_dct_dwt(original_image, watermarked_image, watermark_shape):
+    original_float = np.float32(original_image)
+    watermarked_float = np.float32(watermarked_image)
+
+    LL_o, _ = pywt.dwt2(original_float, "haar")
+    LL_w, _ = pywt.dwt2(watermarked_float, "haar")
+
+    wm_h, wm_w = watermark_shape
+    extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
+
+    block_size = 8
+    coeffs = [(3, 3), (4, 4)]
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block_o = LL_o[x:x+block_size, y:y+block_size]
+            block_w = LL_w[x:x+block_size, y:y+block_size]
+
+            dct_o = cv2.dct(block_o)
+            dct_w = cv2.dct(block_w)
+
+            diffs = [dct_w[c] - dct_o[c] for c in coeffs]
+            extracted[i, j] = 1 if np.mean(diffs) > 0 else 0
+
+    return extracted
+
+# =========================
+# DWT-DFT WATERMARKING
+# =========================
+
+def embed_watermark_dwt_dft(host_gray, watermark_binary, alpha=10):
+    host_float = np.float32(host_gray)
+
+    LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
+
+    LL_w = LL.copy()
+
+    wm_h, wm_w = watermark_binary.shape
+    block_size = 8
+    coeffs = [(3, 3), (3, 4), (4, 3), (4, 4)]
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block = LL_w[x:x+block_size, y:y+block_size]
+            dft_block = np.fft.fft2(block)
+
+            bit = watermark_binary[i, j]
+
+            for c in coeffs:
+                if bit == 1:
+                    dft_block[c] += alpha
+                else:
+                    dft_block[c] -= alpha
+
+            LL_w[x:x+block_size, y:y+block_size] = np.real(np.fft.ifft2(dft_block))
+
+    watermarked = pywt.idwt2(
+        (LL_w, (LH, HL, HH)),
+        "haar"
+    )
+
+    return np.uint8(np.clip(watermarked, 0, 255))
+
+
+def extract_watermark_dwt_dft(original_image, watermarked_image, watermark_shape):
+    original_float = np.float32(original_image)
+    watermarked_float = np.float32(watermarked_image)
+
+    LL_o, _ = pywt.dwt2(original_float, "haar")
+    LL_w, _ = pywt.dwt2(watermarked_float, "haar")
+
+    wm_h, wm_w = watermark_shape
+    extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
+
+    block_size = 8
+    coeffs = [(3, 3), (3, 4), (4, 3), (4, 4)]
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block_o = LL_o[x:x+block_size, y:y+block_size]
+            block_w = LL_w[x:x+block_size, y:y+block_size]
+
+            dft_o = np.fft.fft2(block_o)
+            dft_w = np.fft.fft2(block_w)
+
+            diffs = [np.real(dft_w[c] - dft_o[c]) for c in coeffs]
+
+            extracted[i, j] = 1 if np.mean(diffs) > 0 else 0
+
+    return extracted
+
+# =========================
+# DCT-SVD WATERMARKING
+# =========================
+
+def embed_watermark_dct_svd(host_gray, watermark_binary, alpha=10):
+    host_float = np.float32(host_gray)
+
+    dct_image = cv2.dct(host_float)
+    dct_w = dct_image.copy()
+
+    wm_h, wm_w = watermark_binary.shape
+    block_size = 8
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block = dct_w[x:x+block_size, y:y+block_size]
+
+            U, S, Vt = np.linalg.svd(block, full_matrices=False)
+
+            if watermark_binary[i, j] == 1:
+                S[0] += alpha
             else:
-                extracted[i, j] = 0
+                S[0] -= alpha
+
+            dct_w[x:x+block_size, y:y+block_size] = np.dot(U, np.dot(np.diag(S), Vt))
+
+    watermarked = cv2.idct(dct_w)
+
+    return np.uint8(np.clip(watermarked, 0, 255))
+
+
+def extract_watermark_dct_svd(original_image, watermarked_image, watermark_shape):
+    original_float = np.float32(original_image)
+    watermarked_float = np.float32(watermarked_image)
+
+    dct_o = cv2.dct(original_float)
+    dct_w = cv2.dct(watermarked_float)
+
+    wm_h, wm_w = watermark_shape
+    extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
+
+    block_size = 8
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block_o = dct_o[x:x+block_size, y:y+block_size]
+            block_w = dct_w[x:x+block_size, y:y+block_size]
+
+            _, S_o, _ = np.linalg.svd(block_o, full_matrices=False)
+            _, S_w, _ = np.linalg.svd(block_w, full_matrices=False)
+
+            extracted[i, j] = 1 if S_w[0] - S_o[0] > 0 else 0
+
+    return extracted
+
+# =========================
+# DWT-SVD WATERMARKING
+# =========================
+
+def embed_watermark_dwt_svd(host_gray, watermark_binary, alpha=10):
+    host_float = np.float32(host_gray)
+
+    LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
+
+    LL_w = LL.copy()
+
+    wm_h, wm_w = watermark_binary.shape
+    block_size = 8
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block = LL_w[x:x+block_size, y:y+block_size]
+
+            U, S, Vt = np.linalg.svd(block, full_matrices=False)
+
+            if watermark_binary[i, j] == 1:
+                S[0] += alpha
+            else:
+                S[0] -= alpha
+
+            LL_w[x:x+block_size, y:y+block_size] = np.dot(U, np.dot(np.diag(S), Vt))
+
+    watermarked = pywt.idwt2(
+        (LL_w, (LH, HL, HH)),
+        "haar"
+    )
+
+    return np.uint8(np.clip(watermarked, 0, 255))
+
+
+def extract_watermark_dwt_svd(original_image, watermarked_image, watermark_shape):
+    original_float = np.float32(original_image)
+    watermarked_float = np.float32(watermarked_image)
+
+    LL_o, _ = pywt.dwt2(original_float, "haar")
+    LL_w, _ = pywt.dwt2(watermarked_float, "haar")
+
+    wm_h, wm_w = watermark_shape
+    extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
+
+    block_size = 8
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block_o = LL_o[x:x+block_size, y:y+block_size]
+            block_w = LL_w[x:x+block_size, y:y+block_size]
+
+            _, S_o, _ = np.linalg.svd(block_o, full_matrices=False)
+            _, S_w, _ = np.linalg.svd(block_w, full_matrices=False)
+
+            extracted[i, j] = 1 if S_w[0] - S_o[0] > 0 else 0
 
     return extracted
 
@@ -439,6 +734,35 @@ def predict_alpha_by_domain(domain):
         return 10
 
 # =========================
+# METHOD EXECUTOR
+# =========================
+
+def run_embedding_method(method, img_gray, watermark_binary, alpha):
+    if method == "Block-SVD":
+        return embed_watermark_svd_block, extract_watermark_svd_block
+
+    elif method == "Improved DCT":
+        return embed_watermark_dct_multi, extract_watermark_dct_multi
+
+    elif method == "Improved DWT":
+        return embed_watermark_dwt_ll, extract_watermark_dwt_ll
+
+    elif method == "DCT-DWT":
+        return embed_watermark_dct_dwt, extract_watermark_dct_dwt
+
+    elif method == "DWT-DFT":
+        return embed_watermark_dwt_dft, extract_watermark_dwt_dft
+
+    elif method == "DCT-SVD":
+        return embed_watermark_dct_svd, extract_watermark_dct_svd
+
+    elif method == "DWT-SVD":
+        return embed_watermark_dwt_svd, extract_watermark_dwt_svd
+
+    else:
+        return None, None
+
+# =========================
 # SIDEBAR SETTINGS
 # =========================
 
@@ -449,7 +773,12 @@ attack_type = st.sidebar.selectbox(t["attack"], attack_options[lang])
 
 method_options = [
     "Block-SVD",
-    "Improved DCT"
+    "Improved DCT",
+    "Improved DWT",
+    "DCT-DWT",
+    "DWT-DFT",
+    "DCT-SVD",
+    "DWT-SVD"
 ]
 
 selected_method = st.sidebar.selectbox(
@@ -581,47 +910,34 @@ if uploaded_file is not None:
     else:
         watermark_binary = create_default_watermark()
 
-    if selected_method == "Block-SVD":
-        watermarked = embed_watermark_svd_block(
-            img_gray,
-            watermark_binary,
-            alpha=predicted_alpha
-        )
+    embed_fn, extract_fn = run_embedding_method(
+        selected_method,
+        img_gray,
+        watermark_binary,
+        predicted_alpha
+    )
 
-        attacked = apply_attack(
-            watermarked,
-            attack_type,
-            attack_param
-        )
-
-        extracted = extract_watermark_svd_block(
-            img_gray,
-            attacked,
-            watermark_binary.shape
-        )
-
-    elif selected_method == "Improved DCT":
-        watermarked = embed_watermark_dct_multi(
-            img_gray,
-            watermark_binary,
-            alpha=predicted_alpha
-        )
-
-        attacked = apply_attack(
-            watermarked,
-            attack_type,
-            attack_param
-        )
-
-        extracted = extract_watermark_dct_multi(
-            img_gray,
-            attacked,
-            watermark_binary.shape
-        )
-
-    else:
+    if embed_fn is None or extract_fn is None:
         st.error("Unknown embedding method selected.")
         st.stop()
+
+    watermarked = embed_fn(
+        img_gray,
+        watermark_binary,
+        alpha=predicted_alpha
+    )
+
+    attacked = apply_attack(
+        watermarked,
+        attack_type,
+        attack_param
+    )
+
+    extracted = extract_fn(
+        img_gray,
+        attacked,
+        watermark_binary.shape
+    )
 
     psnr_val = calculate_psnr(img_gray, watermarked)
     ssim_val = calculate_ssim(img_gray, watermarked)
