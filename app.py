@@ -338,6 +338,86 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
             extracted[i, j] = 1 if S_watermarked[0] - S_original[0] > 0 else 0
 
     return extracted
+    # =========================
+# IMPROVED DCT WATERMARKING
+# =========================
+
+def embed_watermark_dct_multi(host_gray, watermark_binary, alpha=10):
+    host_float = np.float32(host_gray)
+    watermarked = host_float.copy()
+
+    wm_h, wm_w = watermark_binary.shape
+    block_size = 8
+
+    coeffs = [
+        (3, 3),
+        (3, 4),
+        (4, 3),
+        (4, 4)
+    ]
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            block = watermarked[x:x+block_size, y:y+block_size]
+            dct_block = cv2.dct(block)
+
+            bit = watermark_binary[i, j]
+
+            for c in coeffs:
+                if bit == 1:
+                    dct_block[c] += alpha
+                else:
+                    dct_block[c] -= alpha
+
+            idct_block = cv2.idct(dct_block)
+            watermarked[x:x+block_size, y:y+block_size] = idct_block
+
+    return np.uint8(np.clip(watermarked, 0, 255))
+
+
+def extract_watermark_dct_multi(original_image, watermarked_image, watermark_shape):
+    original_float = np.float32(original_image)
+    watermarked_float = np.float32(watermarked_image)
+
+    wm_h, wm_w = watermark_shape
+    extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
+
+    block_size = 8
+
+    coeffs = [
+        (3, 3),
+        (3, 4),
+        (4, 3),
+        (4, 4)
+    ]
+
+    for i in range(wm_h):
+        for j in range(wm_w):
+            x = i * block_size
+            y = j * block_size
+
+            original_block = original_float[x:x+block_size, y:y+block_size]
+            watermarked_block = watermarked_float[x:x+block_size, y:y+block_size]
+
+            dct_original = cv2.dct(original_block)
+            dct_watermarked = cv2.dct(watermarked_block)
+
+            diffs = []
+
+            for c in coeffs:
+                diffs.append(dct_watermarked[c] - dct_original[c])
+
+            avg_diff = np.mean(diffs)
+
+            if avg_diff > 0:
+                extracted[i, j] = 1
+            else:
+                extracted[i, j] = 0
+
+    return extracted
 
 # =========================
 # CONTEXT-AWARE ALPHA RULE
@@ -354,6 +434,17 @@ def predict_alpha_by_domain(domain):
         return 10
     else:
         return 10
+    st.sidebar.markdown("---")
+
+method_options = [
+    "Block-SVD",
+    "Improved DCT"
+]
+
+selected_method = st.sidebar.selectbox(
+    "Embedding method",
+    method_options
+)
 
 # =========================
 # SIDEBAR SETTINGS
@@ -488,6 +579,7 @@ if uploaded_file is not None:
     else:
         watermark_binary = create_default_watermark()
 
+   if selected_method == "Block-SVD":
     watermarked = embed_watermark_svd_block(
         img_gray,
         watermark_binary,
@@ -506,6 +598,25 @@ if uploaded_file is not None:
         watermark_binary.shape
     )
 
+elif selected_method == "Improved DCT":
+    watermarked = embed_watermark_dct_multi(
+        img_gray,
+        watermark_binary,
+        alpha=predicted_alpha
+    )
+
+    attacked = apply_attack(
+        watermarked,
+        attack_type,
+        attack_param
+    )
+
+    extracted = extract_watermark_dct_multi(
+        img_gray,
+        attacked,
+        watermark_binary.shape
+    )
+
     psnr_val = calculate_psnr(img_gray, watermarked)
     ssim_val = calculate_ssim(img_gray, watermarked)
     ber_val = calculate_ber(watermark_binary, extracted)
@@ -515,7 +626,7 @@ if uploaded_file is not None:
     st.write(f"{t['selected_domain']}: **{domain}**")
     st.write(f"{t['recommended_alpha']}: **{recommended_alpha}**")
     st.write(f"{t['selected_alpha']}: **{predicted_alpha}**")
-    st.write(f"{t['method']}: **Block-SVD**")
+    st.write(f"{t['method']}: **{selected_method}**")
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("PSNR", f"{psnr_val:.2f} dB")
@@ -558,7 +669,7 @@ if uploaded_file is not None:
         ],
         t["value"]: [
             domain,
-            "Block-SVD",
+            selected_method,
             recommended_alpha,
             predicted_alpha,
             attack_type,
