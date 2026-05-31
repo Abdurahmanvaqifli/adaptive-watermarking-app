@@ -73,6 +73,10 @@ T = {
         "ssim_chart": "SSIM müqayisəsi",
         "ber_chart": "BER müqayisəsi",
         "corr_chart": "Correlation müqayisəsi",
+        "score": "Score",
+        "recommended_method": "Tövsiyə olunan metod",
+        "recommendation_reason": "Tövsiyə səbəbi",
+        "highest_score_reason": "Cari alpha, watermark və attack parametrləri altında ən yüksək score göstərən metod.",
     },
     "en": {
         "title": "Context-Aware Adaptive Invisible Watermarking System",
@@ -124,6 +128,10 @@ T = {
         "ssim_chart": "SSIM Comparison",
         "ber_chart": "BER Comparison",
         "corr_chart": "Correlation Comparison",
+        "score": "Score",
+        "recommended_method": "Recommended Method",
+        "recommendation_reason": "Recommendation reason",
+        "highest_score_reason": "The method with the highest score under the current alpha, watermark, and attack settings.",
     }
 }
 
