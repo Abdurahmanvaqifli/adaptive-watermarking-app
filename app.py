@@ -38,6 +38,7 @@ T = {
         "recommended": "Tövsiyə olunan",
         "manual": "Əl ilə seçim",
         "alpha_value": "Alpha dəyəri",
+        "embedding_method": "Embedding metodu",
         "adaptive_decision": "Adaptiv qərar",
         "selected_domain": "Seçilmiş domen",
         "recommended_alpha": "Tövsiyə olunan alpha",
@@ -80,6 +81,7 @@ T = {
         "recommended": "Recommended",
         "manual": "Manual",
         "alpha_value": "Alpha value",
+        "embedding_method": "Embedding method",
         "adaptive_decision": "Adaptive Decision",
         "selected_domain": "Selected domain",
         "recommended_alpha": "Recommended alpha",
@@ -338,7 +340,8 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
             extracted[i, j] = 1 if S_watermarked[0] - S_original[0] > 0 else 0
 
     return extracted
-    # =========================
+
+# =========================
 # IMPROVED DCT WATERMARKING
 # =========================
 
@@ -434,17 +437,6 @@ def predict_alpha_by_domain(domain):
         return 10
     else:
         return 10
-    st.sidebar.markdown("---")
-
-method_options = [
-    "Block-SVD",
-    "Improved DCT"
-]
-
-selected_method = st.sidebar.selectbox(
-    "Embedding method",
-    method_options
-)
 
 # =========================
 # SIDEBAR SETTINGS
@@ -454,6 +446,16 @@ st.sidebar.header(t["settings"])
 
 domain = st.sidebar.selectbox(t["domain"], domain_options[lang])
 attack_type = st.sidebar.selectbox(t["attack"], attack_options[lang])
+
+method_options = [
+    "Block-SVD",
+    "Improved DCT"
+]
+
+selected_method = st.sidebar.selectbox(
+    t["embedding_method"],
+    method_options
+)
 
 recommended_alpha = predict_alpha_by_domain(domain)
 
@@ -579,43 +581,47 @@ if uploaded_file is not None:
     else:
         watermark_binary = create_default_watermark()
 
-   if selected_method == "Block-SVD":
-    watermarked = embed_watermark_svd_block(
-        img_gray,
-        watermark_binary,
-        alpha=predicted_alpha
-    )
+    if selected_method == "Block-SVD":
+        watermarked = embed_watermark_svd_block(
+            img_gray,
+            watermark_binary,
+            alpha=predicted_alpha
+        )
 
-    attacked = apply_attack(
-        watermarked,
-        attack_type,
-        attack_param
-    )
+        attacked = apply_attack(
+            watermarked,
+            attack_type,
+            attack_param
+        )
 
-    extracted = extract_watermark_svd_block(
-        img_gray,
-        attacked,
-        watermark_binary.shape
-    )
+        extracted = extract_watermark_svd_block(
+            img_gray,
+            attacked,
+            watermark_binary.shape
+        )
 
-elif selected_method == "Improved DCT":
-    watermarked = embed_watermark_dct_multi(
-        img_gray,
-        watermark_binary,
-        alpha=predicted_alpha
-    )
+    elif selected_method == "Improved DCT":
+        watermarked = embed_watermark_dct_multi(
+            img_gray,
+            watermark_binary,
+            alpha=predicted_alpha
+        )
 
-    attacked = apply_attack(
-        watermarked,
-        attack_type,
-        attack_param
-    )
+        attacked = apply_attack(
+            watermarked,
+            attack_type,
+            attack_param
+        )
 
-    extracted = extract_watermark_dct_multi(
-        img_gray,
-        attacked,
-        watermark_binary.shape
-    )
+        extracted = extract_watermark_dct_multi(
+            img_gray,
+            attacked,
+            watermark_binary.shape
+        )
+
+    else:
+        st.error("Unknown embedding method selected.")
+        st.stop()
 
     psnr_val = calculate_psnr(img_gray, watermarked)
     ssim_val = calculate_ssim(img_gray, watermarked)
