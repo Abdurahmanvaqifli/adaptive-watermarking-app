@@ -228,6 +228,41 @@ def calculate_correlation(original_wm, extracted_wm):
     return np.corrcoef(o, e)[0, 1]
 
 # =========================
+# DOMAIN-SPECIFIC SCORING
+# =========================
+
+def get_domain_weights(domain):
+    if domain in ["Medical", "Tibbi"]:
+        return {"psnr": 0.40, "ssim": 0.40, "corr": 0.10, "ber": 0.10}
+
+    elif domain in ["Satellite / GIS", "Peyk / GIS"]:
+        return {"psnr": 0.15, "ssim": 0.15, "corr": 0.35, "ber": 0.35}
+
+    elif domain in ["Cultural Heritage", "Mədəni irs"]:
+        return {"psnr": 0.35, "ssim": 0.35, "corr": 0.15, "ber": 0.15}
+
+    else:
+        return {"psnr": 0.25, "ssim": 0.25, "corr": 0.25, "ber": 0.25}
+
+
+def calculate_score(psnr_val, ssim_val, ber_val, corr_val, domain):
+    weights = get_domain_weights(domain)
+
+    psnr_norm = min(psnr_val / 60.0, 1.0)
+    ssim_norm = max(min(ssim_val, 1.0), 0.0)
+    corr_norm = max(min(corr_val, 1.0), 0.0)
+    ber_quality = 1.0 - max(min(ber_val, 1.0), 0.0)
+
+    score = (
+        weights["psnr"] * psnr_norm +
+        weights["ssim"] * ssim_norm +
+        weights["corr"] * corr_norm +
+        weights["ber"] * ber_quality
+    )
+
+    return round(score, 4)
+
+# =========================
 # ATTACKS
 # =========================
 
@@ -372,7 +407,6 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
 def embed_watermark_dct_multi(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
     watermarked = host_float.copy()
-
     wm_h, wm_w = watermark_binary.shape
     block_size = 8
 
@@ -428,6 +462,7 @@ def extract_watermark_dct_multi(original_image, watermarked_image, watermark_sha
 
     return extracted
 
+
 # =========================
 # IMPROVED DWT WATERMARKING
 # =========================
@@ -473,6 +508,7 @@ def extract_watermark_dwt_ll(original_image, watermarked_image, watermark_shape)
     )
 
     return extracted
+
 
 # =========================
 # DCT-DWT WATERMARKING
@@ -543,6 +579,7 @@ def extract_watermark_dct_dwt(original_image, watermarked_image, watermark_shape
 
     return extracted
 
+
 # =========================
 # DWT-DFT WATERMARKING
 # =========================
@@ -612,6 +649,7 @@ def extract_watermark_dwt_dft(original_image, watermarked_image, watermark_shape
 
     return extracted
 
+
 # =========================
 # DCT-SVD WATERMARKING
 # =========================
@@ -639,7 +677,10 @@ def embed_watermark_dct_svd(host_gray, watermark_binary, alpha=10):
             else:
                 S[0] -= alpha
 
-            dct_w[x:x+block_size, y:y+block_size] = np.dot(U, np.dot(np.diag(S), Vt))
+            dct_w[x:x+block_size, y:y+block_size] = np.dot(
+                U,
+                np.dot(np.diag(S), Vt)
+            )
 
     watermarked = cv2.idct(dct_w)
 
@@ -673,6 +714,7 @@ def extract_watermark_dct_svd(original_image, watermarked_image, watermark_shape
 
     return extracted
 
+
 # =========================
 # DWT-SVD WATERMARKING
 # =========================
@@ -700,7 +742,10 @@ def embed_watermark_dwt_svd(host_gray, watermark_binary, alpha=10):
             else:
                 S[0] -= alpha
 
-            LL_w[x:x+block_size, y:y+block_size] = np.dot(U, np.dot(np.diag(S), Vt))
+            LL_w[x:x+block_size, y:y+block_size] = np.dot(
+                U,
+                np.dot(np.diag(S), Vt)
+            )
 
     watermarked = pywt.idwt2(
         (LL_w, (LH, HL, HH)),
@@ -736,22 +781,26 @@ def extract_watermark_dwt_svd(original_image, watermarked_image, watermark_shape
             extracted[i, j] = 1 if S_w[0] - S_o[0] > 0 else 0
 
     return extracted
-
-# =========================
+    # =========================
 # CONTEXT-AWARE ALPHA RULE
 # =========================
 
 def predict_alpha_by_domain(domain):
     if domain in ["Medical", "Tibbi"]:
         return 10
+
     elif domain in ["Cultural Heritage", "Mədəni irs"]:
         return 10
+
     elif domain in ["Satellite / GIS", "Peyk / GIS"]:
         return 20
+
     elif domain in ["Natural", "Təbii"]:
         return 10
+
     else:
         return 10
+
 
 # =========================
 # METHOD EXECUTOR
@@ -760,20 +809,28 @@ def predict_alpha_by_domain(domain):
 def run_embedding_method(method):
     if method == "Block-SVD":
         return embed_watermark_svd_block, extract_watermark_svd_block
+
     elif method == "Improved DCT":
         return embed_watermark_dct_multi, extract_watermark_dct_multi
+
     elif method == "Improved DWT":
         return embed_watermark_dwt_ll, extract_watermark_dwt_ll
+
     elif method == "DCT-DWT":
         return embed_watermark_dct_dwt, extract_watermark_dct_dwt
+
     elif method == "DWT-DFT":
         return embed_watermark_dwt_dft, extract_watermark_dwt_dft
+
     elif method == "DCT-SVD":
         return embed_watermark_dct_svd, extract_watermark_dct_svd
+
     elif method == "DWT-SVD":
         return embed_watermark_dwt_svd, extract_watermark_dwt_svd
+
     else:
         return None, None
+
 
 # =========================
 # SIDEBAR SETTINGS
@@ -781,8 +838,15 @@ def run_embedding_method(method):
 
 st.sidebar.header(t["settings"])
 
-domain = st.sidebar.selectbox(t["domain"], domain_options[lang])
-attack_type = st.sidebar.selectbox(t["attack"], attack_options[lang])
+domain = st.sidebar.selectbox(
+    t["domain"],
+    domain_options[lang]
+)
+
+attack_type = st.sidebar.selectbox(
+    t["attack"],
+    attack_options[lang]
+)
 
 method_options = [
     "Block-SVD",
@@ -806,11 +870,15 @@ st.sidebar.write(f"### {t['adaptive_alpha']}")
 
 alpha_mode = st.sidebar.radio(
     t["alpha_selection"],
-    [t["recommended"], t["manual"]]
+    [
+        t["recommended"],
+        t["manual"]
+    ]
 )
 
 if alpha_mode == t["recommended"]:
     predicted_alpha = recommended_alpha
+
 else:
     predicted_alpha = st.sidebar.slider(
         t["alpha_value"],
@@ -820,39 +888,89 @@ else:
         step=5
     )
 
-attack_type_normalized = normalize_attack_name(attack_type)
+
+attack_type_normalized = normalize_attack_name(
+    attack_type
+)
 
 if attack_type_normalized == "JPEG Compression":
-    attack_param = st.sidebar.slider(t["jpeg_quality"], 10, 100, 70)
+    attack_param = st.sidebar.slider(
+        t["jpeg_quality"],
+        10,
+        100,
+        70
+    )
 
 elif attack_type_normalized == "Gaussian Noise":
-    attack_param = st.sidebar.slider(t["noise_strength"], 0.01, 0.10, 0.03)
+    attack_param = st.sidebar.slider(
+        t["noise_strength"],
+        0.01,
+        0.10,
+        0.03
+    )
 
 elif attack_type_normalized == "Salt & Pepper Noise":
     label = "Salt & Pepper intensivliyi" if lang == "az" else "Salt & Pepper Strength"
-    attack_param = st.sidebar.slider(label, 0.01, 0.10, 0.03)
+
+    attack_param = st.sidebar.slider(
+        label,
+        0.01,
+        0.10,
+        0.03
+    )
 
 elif attack_type_normalized == "Gaussian Blur":
-    attack_param = st.sidebar.slider(t["blur_kernel"], 3, 9, 5, step=2)
+    attack_param = st.sidebar.slider(
+        t["blur_kernel"],
+        3,
+        9,
+        5,
+        step=2
+    )
 
 elif attack_type_normalized == "Brightness Change":
     label = "Parlaqlıq səviyyəsi" if lang == "az" else "Brightness Level"
-    attack_param = st.sidebar.slider(label, -80, 80, 30)
+
+    attack_param = st.sidebar.slider(
+        label,
+        -80,
+        80,
+        30
+    )
 
 elif attack_type_normalized == "Contrast Change":
     label = "Kontrast səviyyəsi" if lang == "az" else "Contrast Level"
-    attack_param = st.sidebar.slider(label, 0.5, 2.0, 1.3)
+
+    attack_param = st.sidebar.slider(
+        label,
+        0.5,
+        2.0,
+        1.3
+    )
 
 elif attack_type_normalized == "Rotation":
     label = "Fırlatma bucağı" if lang == "az" else "Rotation Angle"
-    attack_param = st.sidebar.slider(label, -30, 30, 10)
+
+    attack_param = st.sidebar.slider(
+        label,
+        -30,
+        30,
+        10
+    )
 
 elif attack_type_normalized == "Cropping":
     label = "Kəsmə faizi" if lang == "az" else "Cropping Percentage"
-    attack_param = st.sidebar.slider(label, 0.05, 0.30, 0.10)
+
+    attack_param = st.sidebar.slider(
+        label,
+        0.05,
+        0.30,
+        0.10
+    )
 
 else:
     attack_param = 0
+
 
 uploaded_file = st.file_uploader(
     t["upload_host"],
@@ -885,6 +1003,7 @@ elif watermark_type == t["text_watermark"]:
         value="AV"
     )
 
+
 # =========================
 # METRIC EXPLANATIONS
 # =========================
@@ -895,20 +1014,29 @@ with st.expander(t["metric_exp"]):
     st.write(f"**BER:** {t['ber_exp']}")
     st.write(f"**Correlation:** {t['corr_exp']}")
 
+
 # =========================
 # MAIN PROCESS
 # =========================
 
 if uploaded_file is not None:
+
     image = Image.open(uploaded_file).convert("RGB")
     img_rgb = np.array(image)
     img_rgb = cv2.resize(img_rgb, (512, 512))
-    img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    img_gray = cv2.cvtColor(
+        img_rgb,
+        cv2.COLOR_RGB2GRAY
+    )
 
     if watermark_type == t["upload_logo"] and watermark_file is not None:
+
         wm_img = Image.open(watermark_file).convert("L")
         wm_img = np.array(wm_img)
-        wm_img = cv2.resize(wm_img, (32, 32))
+        wm_img = cv2.resize(
+            wm_img,
+            (32, 32)
+        )
 
         _, watermark_binary = cv2.threshold(
             wm_img,
@@ -918,16 +1046,23 @@ if uploaded_file is not None:
         )
 
     elif watermark_type == t["text_watermark"]:
-        watermark_binary = create_text_watermark(watermark_text)
+
+        watermark_binary = create_text_watermark(
+            watermark_text
+        )
 
     else:
+
         watermark_binary = create_default_watermark()
+
 
     # =========================
     # SELECTED METHOD RESULT
     # =========================
 
-    embed_fn, extract_fn = run_embedding_method(selected_method)
+    embed_fn, extract_fn = run_embedding_method(
+        selected_method
+    )
 
     if embed_fn is None or extract_fn is None:
         st.error("Unknown embedding method selected.")
@@ -951,20 +1086,48 @@ if uploaded_file is not None:
         watermark_binary.shape
     )
 
-    psnr_val = calculate_psnr(img_gray, watermarked)
-    ssim_val = calculate_ssim(img_gray, watermarked)
-    ber_val = calculate_ber(watermark_binary, extracted)
-    corr_val = calculate_correlation(watermark_binary, extracted)
+    psnr_val = calculate_psnr(
+        img_gray,
+        watermarked
+    )
+
+    ssim_val = calculate_ssim(
+        img_gray,
+        watermarked
+    )
+
+    ber_val = calculate_ber(
+        watermark_binary,
+        extracted
+    )
+
+    corr_val = calculate_correlation(
+        watermark_binary,
+        extracted
+    )
+
+    score_val = calculate_score(
+        psnr_val,
+        ssim_val,
+        ber_val,
+        corr_val,
+        domain
+    )
+
 
     # =========================
     # COMPARISON ENGINE
     # =========================
 
     comparison_results = []
+    extraction_gallery = []
 
     for method_name in method_options:
+
         try:
-            embed_compare, extract_compare = run_embedding_method(method_name)
+            embed_compare, extract_compare = run_embedding_method(
+                method_name
+            )
 
             if embed_compare is None or extract_compare is None:
                 continue
@@ -987,64 +1150,146 @@ if uploaded_file is not None:
                 watermark_binary.shape
             )
 
-            psnr_compare = calculate_psnr(img_gray, wm_compare)
-            ssim_compare = calculate_ssim(img_gray, wm_compare)
-            ber_compare = calculate_ber(watermark_binary, extracted_compare)
-            corr_compare = calculate_correlation(watermark_binary, extracted_compare)
+            psnr_compare = calculate_psnr(
+                img_gray,
+                wm_compare
+            )
+
+            ssim_compare = calculate_ssim(
+                img_gray,
+                wm_compare
+            )
+
+            ber_compare = calculate_ber(
+                watermark_binary,
+                extracted_compare
+            )
+
+            corr_compare = calculate_correlation(
+                watermark_binary,
+                extracted_compare
+            )
+
+            score_compare = calculate_score(
+                psnr_compare,
+                ssim_compare,
+                ber_compare,
+                corr_compare,
+                domain
+            )
 
             comparison_results.append({
                 "Method": method_name,
                 "PSNR": round(psnr_compare, 4),
                 "SSIM": round(ssim_compare, 4),
                 "BER": round(ber_compare, 4),
-                "Correlation": round(corr_compare, 4)
+                "Correlation": round(corr_compare, 4),
+                "Score": score_compare
             })
 
-        except Exception as e:
+            extraction_gallery.append({
+                "Method": method_name,
+                "Extracted": extracted_compare
+            })
+
+        except Exception:
             comparison_results.append({
                 "Method": method_name,
                 "PSNR": np.nan,
                 "SSIM": np.nan,
                 "BER": np.nan,
-                "Correlation": np.nan
+                "Correlation": np.nan,
+                "Score": np.nan
             })
 
-    comparison_df = pd.DataFrame(comparison_results)
+    comparison_df = pd.DataFrame(
+        comparison_results
+    )
+
+    valid_comparison_df = comparison_df.dropna(
+        subset=["Score"]
+    )
+
+    if not valid_comparison_df.empty:
+        best_row = valid_comparison_df.loc[
+            valid_comparison_df["Score"].idxmax()
+        ]
+
+        recommended_method = best_row["Method"]
+        recommended_score = best_row["Score"]
+
+    else:
+        recommended_method = selected_method
+        recommended_score = score_val
+
 
     # =========================
     # SELECTED METHOD DISPLAY
     # =========================
 
     st.subheader(t["adaptive_decision"])
+
     st.write(f"{t['selected_domain']}: **{domain}**")
     st.write(f"{t['recommended_alpha']}: **{recommended_alpha}**")
     st.write(f"{t['selected_alpha']}: **{predicted_alpha}**")
     st.write(f"{t['method']}: **{selected_method}**")
 
-    col1, col2, col3, col4 = st.columns(4)
+    st.success(
+        f"{t['recommended_method']}: {recommended_method} | Score = {recommended_score}"
+    )
+
+    st.caption(
+        f"{t['recommendation_reason']}: {t['highest_score_reason']}"
+    )
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
     col1.metric("PSNR", f"{psnr_val:.2f} dB")
     col2.metric("SSIM", f"{ssim_val:.4f}")
     col3.metric("BER", f"{ber_val:.4f}")
     col4.metric("Correlation", f"{corr_val:.4f}")
+    col5.metric("Score", f"{score_val:.4f}")
+
 
     st.subheader(t["images"])
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
-        st.image(img_gray, caption=t["original"], clamp=True)
+        st.image(
+            img_gray,
+            caption=t["original"],
+            clamp=True
+        )
 
     with c2:
-        st.image(watermark_binary * 255, caption=t["input_wm"], clamp=True)
+        st.image(
+            watermark_binary * 255,
+            caption=t["input_wm"],
+            clamp=True
+        )
 
     with c3:
-        st.image(watermarked, caption=f"{t['watermarked']} α={predicted_alpha}", clamp=True)
+        st.image(
+            watermarked,
+            caption=f"{t['watermarked']} α={predicted_alpha}",
+            clamp=True
+        )
 
     with c4:
-        st.image(attacked, caption=f"{t['after_attack']}: {attack_type}", clamp=True)
+        st.image(
+            attacked,
+            caption=f"{t['after_attack']}: {attack_type}",
+            clamp=True
+        )
 
     with c5:
-        st.image(extracted * 255, caption=t["extracted"], clamp=True)
+        st.image(
+            extracted * 255,
+            caption=t["extracted"],
+            clamp=True
+        )
+
 
     st.subheader(t["result_table"])
 
@@ -1058,7 +1303,8 @@ if uploaded_file is not None:
             "PSNR",
             "SSIM",
             "BER",
-            "Correlation"
+            "Correlation",
+            "Score"
         ],
         t["value"]: [
             domain,
@@ -1069,11 +1315,16 @@ if uploaded_file is not None:
             round(psnr_val, 4),
             round(ssim_val, 4),
             round(ber_val, 4),
-            round(corr_val, 4)
+            round(corr_val, 4),
+            score_val
         ]
     })
 
-    st.dataframe(result_df, use_container_width=True)
+    st.dataframe(
+        result_df,
+        use_container_width=True
+    )
+
 
     # =========================
     # COMPARISON DISPLAY
@@ -1083,7 +1334,11 @@ if uploaded_file is not None:
     st.subheader(t["comparison_title"])
     st.write(t["comparison_desc"])
 
-    st.dataframe(comparison_df, use_container_width=True)
+    st.dataframe(
+        comparison_df,
+        use_container_width=True
+    )
+
 
     st.subheader(t["imperceptibility"])
 
@@ -1091,13 +1346,18 @@ if uploaded_file is not None:
 
     with chart_col1:
         st.write(t["psnr_chart"])
-        psnr_chart_df = comparison_df[["Method", "PSNR"]].set_index("Method")
+        psnr_chart_df = comparison_df[
+            ["Method", "PSNR"]
+        ].set_index("Method")
         st.bar_chart(psnr_chart_df)
 
     with chart_col2:
         st.write(t["ssim_chart"])
-        ssim_chart_df = comparison_df[["Method", "SSIM"]].set_index("Method")
+        ssim_chart_df = comparison_df[
+            ["Method", "SSIM"]
+        ].set_index("Method")
         st.bar_chart(ssim_chart_df)
+
 
     st.subheader(t["robustness"])
 
@@ -1105,13 +1365,42 @@ if uploaded_file is not None:
 
     with chart_col3:
         st.write(t["ber_chart"])
-        ber_chart_df = comparison_df[["Method", "BER"]].set_index("Method")
+        ber_chart_df = comparison_df[
+            ["Method", "BER"]
+        ].set_index("Method")
         st.bar_chart(ber_chart_df)
 
     with chart_col4:
         st.write(t["corr_chart"])
-        corr_chart_df = comparison_df[["Method", "Correlation"]].set_index("Method")
+        corr_chart_df = comparison_df[
+            ["Method", "Correlation"]
+        ].set_index("Method")
         st.bar_chart(corr_chart_df)
+
+
+    st.subheader("Score Comparison")
+
+    score_chart_df = comparison_df[
+        ["Method", "Score"]
+    ].set_index("Method")
+
+    st.bar_chart(score_chart_df)
+
+
+    st.subheader("Visual Extraction Gallery")
+
+    if extraction_gallery:
+        gallery_cols = st.columns(
+            len(extraction_gallery)
+        )
+
+        for idx, item in enumerate(extraction_gallery):
+            with gallery_cols[idx]:
+                st.image(
+                    item["Extracted"] * 255,
+                    caption=item["Method"],
+                    clamp=True
+                )
 
 else:
     st.info(t["info"])
