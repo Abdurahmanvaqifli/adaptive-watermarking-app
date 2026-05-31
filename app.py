@@ -51,7 +51,7 @@ T = {
         "watermarked": "Su nişanı yerləşdirilmiş şəkil",
         "after_attack": "Hücumdan sonra",
         "extracted": "Çıxarılmış su nişanı",
-        "result_table": "Nəticə cədvəli",
+        "result_table": "Seçilmiş metod üzrə nəticə cədvəli",
         "metric": "Metrik",
         "value": "Dəyər",
         "info": "Başlamaq üçün host şəkli yükləyin.",
@@ -65,6 +65,14 @@ T = {
         "upload_logo": "Logo yüklə",
         "text_watermark": "Mətn su nişanı",
         "enter_watermark_text": "Su nişanı mətnini daxil edin",
+        "comparison_title": "Bütün embedding metodlarının müqayisəsi",
+        "comparison_desc": "Bu müqayisə eyni alpha, eyni watermark və eyni attack parametrləri altında aparılır.",
+        "imperceptibility": "Imperceptibility müqayisəsi",
+        "robustness": "Robustness müqayisəsi",
+        "psnr_chart": "PSNR müqayisəsi",
+        "ssim_chart": "SSIM müqayisəsi",
+        "ber_chart": "BER müqayisəsi",
+        "corr_chart": "Correlation müqayisəsi",
     },
     "en": {
         "title": "Context-Aware Adaptive Invisible Watermarking System",
@@ -94,7 +102,7 @@ T = {
         "watermarked": "Watermarked Image",
         "after_attack": "After Attack",
         "extracted": "Extracted Watermark",
-        "result_table": "Result Table",
+        "result_table": "Selected Method Result Table",
         "metric": "Metric",
         "value": "Value",
         "info": "Please upload a host image to start.",
@@ -108,6 +116,14 @@ T = {
         "upload_logo": "Upload logo",
         "text_watermark": "Text watermark",
         "enter_watermark_text": "Enter watermark text",
+        "comparison_title": "Comparison of All Embedding Methods",
+        "comparison_desc": "This comparison is performed under the same alpha, same watermark, and same attack settings.",
+        "imperceptibility": "Imperceptibility Comparison",
+        "robustness": "Robustness Comparison",
+        "psnr_chart": "PSNR Comparison",
+        "ssim_chart": "SSIM Comparison",
+        "ber_chart": "BER Comparison",
+        "corr_chart": "Correlation Comparison",
     }
 }
 
@@ -458,7 +474,6 @@ def embed_watermark_dct_dwt(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
 
     LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
-
     LL_w = LL.copy()
 
     wm_h, wm_w = watermark_binary.shape
@@ -528,7 +543,6 @@ def embed_watermark_dwt_dft(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
 
     LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
-
     LL_w = LL.copy()
 
     wm_h, wm_w = watermark_binary.shape
@@ -586,7 +600,6 @@ def extract_watermark_dwt_dft(original_image, watermarked_image, watermark_shape
             dft_w = np.fft.fft2(block_w)
 
             diffs = [np.real(dft_w[c] - dft_o[c]) for c in coeffs]
-
             extracted[i, j] = 1 if np.mean(diffs) > 0 else 0
 
     return extracted
@@ -660,7 +673,6 @@ def embed_watermark_dwt_svd(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
 
     LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
-
     LL_w = LL.copy()
 
     wm_h, wm_w = watermark_binary.shape
@@ -737,28 +749,21 @@ def predict_alpha_by_domain(domain):
 # METHOD EXECUTOR
 # =========================
 
-def run_embedding_method(method, img_gray, watermark_binary, alpha):
+def run_embedding_method(method):
     if method == "Block-SVD":
         return embed_watermark_svd_block, extract_watermark_svd_block
-
     elif method == "Improved DCT":
         return embed_watermark_dct_multi, extract_watermark_dct_multi
-
     elif method == "Improved DWT":
         return embed_watermark_dwt_ll, extract_watermark_dwt_ll
-
     elif method == "DCT-DWT":
         return embed_watermark_dct_dwt, extract_watermark_dct_dwt
-
     elif method == "DWT-DFT":
         return embed_watermark_dwt_dft, extract_watermark_dwt_dft
-
     elif method == "DCT-SVD":
         return embed_watermark_dct_svd, extract_watermark_dct_svd
-
     elif method == "DWT-SVD":
         return embed_watermark_dwt_svd, extract_watermark_dwt_svd
-
     else:
         return None, None
 
@@ -910,12 +915,11 @@ if uploaded_file is not None:
     else:
         watermark_binary = create_default_watermark()
 
-    embed_fn, extract_fn = run_embedding_method(
-        selected_method,
-        img_gray,
-        watermark_binary,
-        predicted_alpha
-    )
+    # =========================
+    # SELECTED METHOD RESULT
+    # =========================
+
+    embed_fn, extract_fn = run_embedding_method(selected_method)
 
     if embed_fn is None or extract_fn is None:
         st.error("Unknown embedding method selected.")
@@ -943,6 +947,65 @@ if uploaded_file is not None:
     ssim_val = calculate_ssim(img_gray, watermarked)
     ber_val = calculate_ber(watermark_binary, extracted)
     corr_val = calculate_correlation(watermark_binary, extracted)
+
+    # =========================
+    # COMPARISON ENGINE
+    # =========================
+
+    comparison_results = []
+
+    for method_name in method_options:
+        try:
+            embed_compare, extract_compare = run_embedding_method(method_name)
+
+            if embed_compare is None or extract_compare is None:
+                continue
+
+            wm_compare = embed_compare(
+                img_gray,
+                watermark_binary,
+                alpha=predicted_alpha
+            )
+
+            attacked_compare = apply_attack(
+                wm_compare,
+                attack_type,
+                attack_param
+            )
+
+            extracted_compare = extract_compare(
+                img_gray,
+                attacked_compare,
+                watermark_binary.shape
+            )
+
+            psnr_compare = calculate_psnr(img_gray, wm_compare)
+            ssim_compare = calculate_ssim(img_gray, wm_compare)
+            ber_compare = calculate_ber(watermark_binary, extracted_compare)
+            corr_compare = calculate_correlation(watermark_binary, extracted_compare)
+
+            comparison_results.append({
+                "Method": method_name,
+                "PSNR": round(psnr_compare, 4),
+                "SSIM": round(ssim_compare, 4),
+                "BER": round(ber_compare, 4),
+                "Correlation": round(corr_compare, 4)
+            })
+
+        except Exception as e:
+            comparison_results.append({
+                "Method": method_name,
+                "PSNR": np.nan,
+                "SSIM": np.nan,
+                "BER": np.nan,
+                "Correlation": np.nan
+            })
+
+    comparison_df = pd.DataFrame(comparison_results)
+
+    # =========================
+    # SELECTED METHOD DISPLAY
+    # =========================
 
     st.subheader(t["adaptive_decision"])
     st.write(f"{t['selected_domain']}: **{domain}**")
@@ -1003,6 +1066,44 @@ if uploaded_file is not None:
     })
 
     st.dataframe(result_df, use_container_width=True)
+
+    # =========================
+    # COMPARISON DISPLAY
+    # =========================
+
+    st.markdown("---")
+    st.subheader(t["comparison_title"])
+    st.write(t["comparison_desc"])
+
+    st.dataframe(comparison_df, use_container_width=True)
+
+    st.subheader(t["imperceptibility"])
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        st.write(t["psnr_chart"])
+        psnr_chart_df = comparison_df[["Method", "PSNR"]].set_index("Method")
+        st.bar_chart(psnr_chart_df)
+
+    with chart_col2:
+        st.write(t["ssim_chart"])
+        ssim_chart_df = comparison_df[["Method", "SSIM"]].set_index("Method")
+        st.bar_chart(ssim_chart_df)
+
+    st.subheader(t["robustness"])
+
+    chart_col3, chart_col4 = st.columns(2)
+
+    with chart_col3:
+        st.write(t["ber_chart"])
+        ber_chart_df = comparison_df[["Method", "BER"]].set_index("Method")
+        st.bar_chart(ber_chart_df)
+
+    with chart_col4:
+        st.write(t["corr_chart"])
+        corr_chart_df = comparison_df[["Method", "Correlation"]].set_index("Method")
+        st.bar_chart(corr_chart_df)
 
 else:
     st.info(t["info"])
