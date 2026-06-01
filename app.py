@@ -90,6 +90,19 @@ T = {
         "download_extracted_zip": "Çıxarılmış watermark-ları ZIP yüklə",
         "score_comparison": "Score müqayisəsi",
         "visual_gallery": "Vizual çıxarış qalereyası",
+        "embedding_channel": "Embedding kanalı",
+        "grayscale": "Grayscale",
+        "red_channel": "Qırmızı kanal",
+        "green_channel": "Yaşıl kanal",
+        "blue_channel": "Mavi kanal",
+        "attack_mode": "Attack rejimi",
+        "single_attack": "Tək attack",
+        "combined_attack": "Kombinə attack",
+        "combined_attack_type": "Kombinə attack növü",
+        "jpeg_noise": "JPEG + Gaussian səs-küy",
+        "jpeg_blur": "JPEG + Gaussian bulanıqlıq",
+        "jpeg_noise_blur": "JPEG + Gaussian səs-küy + Gaussian bulanıqlıq",
+        "jpeg_noise_rotation": "JPEG + Gaussian səs-küy + Fırlatma",
     },
     "en": {
         "title": "Context-Aware Adaptive Invisible Watermarking System",
@@ -155,6 +168,19 @@ T = {
         "download_extracted_zip": "Download Extracted Watermarks ZIP",
         "score_comparison": "Score Comparison",
         "visual_gallery": "Visual Extraction Gallery",
+        "embedding_channel": "Embedding channel",
+        "grayscale": "Grayscale",
+        "red_channel": "Red channel",
+        "green_channel": "Green channel",
+        "blue_channel": "Blue channel",
+        "attack_mode": "Attack mode",
+        "single_attack": "Single attack",
+        "combined_attack": "Combined attack",
+        "combined_attack_type": "Combined attack type",
+        "jpeg_noise": "JPEG + Gaussian Noise",
+        "jpeg_blur": "JPEG + Gaussian Blur",
+        "jpeg_noise_blur": "JPEG + Gaussian Noise + Gaussian Blur",
+        "jpeg_noise_rotation": "JPEG + Gaussian Noise + Rotation",
     }
 }
 
@@ -212,7 +238,7 @@ def create_text_watermark(text):
 
     cv2.putText(
         watermark,
-        text[:2],
+            text[:2],
         (3, 22),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.6,
@@ -304,7 +330,47 @@ def add_image_to_zip(zip_file, folder_name, file_name, image_array):
             f"{folder_name}/{file_name}.png",
             encoded_image.tobytes()
         )
-    # =========================
+
+# =========================
+# RGB CHANNEL HELPERS
+# =========================
+
+def get_host_channel(img_rgb, channel_mode):
+    if channel_mode == "Red":
+        return img_rgb[:, :, 0]
+    elif channel_mode == "Green":
+        return img_rgb[:, :, 1]
+    elif channel_mode == "Blue":
+        return img_rgb[:, :, 2]
+    else:
+        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+
+
+def reconstruct_display_image(original_rgb, processed_channel, channel_mode):
+    if channel_mode == "Red":
+        output = original_rgb.copy()
+        output[:, :, 0] = processed_channel
+        return output
+
+    elif channel_mode == "Green":
+        output = original_rgb.copy()
+        output[:, :, 1] = processed_channel
+        return output
+
+    elif channel_mode == "Blue":
+        output = original_rgb.copy()
+        output[:, :, 2] = processed_channel
+        return output
+
+    else:
+        return processed_channel
+
+
+def get_channel_label(channel_mode):
+    return channel_mode
+
+
+# =========================
 # ATTACKS
 # =========================
 
@@ -389,6 +455,41 @@ def apply_attack(image, attack_type, param):
 
 
 # =========================
+# COMBINED ATTACKS
+# =========================
+
+def apply_combined_attack(image, attack_name):
+    attacked = image.copy()
+
+    if attack_name == "JPEG + Noise":
+        attacked = apply_attack(attacked, "JPEG Compression", 60)
+        attacked = apply_attack(attacked, "Gaussian Noise", 0.03)
+
+    elif attack_name == "JPEG + Blur":
+        attacked = apply_attack(attacked, "JPEG Compression", 60)
+        attacked = apply_attack(attacked, "Gaussian Blur", 5)
+
+    elif attack_name == "JPEG + Noise + Blur":
+        attacked = apply_attack(attacked, "JPEG Compression", 60)
+        attacked = apply_attack(attacked, "Gaussian Noise", 0.03)
+        attacked = apply_attack(attacked, "Gaussian Blur", 5)
+
+    elif attack_name == "JPEG + Noise + Rotation":
+        attacked = apply_attack(attacked, "JPEG Compression", 60)
+        attacked = apply_attack(attacked, "Gaussian Noise", 0.03)
+        attacked = apply_attack(attacked, "Rotation", 10)
+
+    return attacked
+
+
+def apply_selected_attack(image, attack_mode, attack_type, attack_param, combined_attack):
+    if attack_mode == "Combined Attack":
+        return apply_combined_attack(image, combined_attack)
+
+    return apply_attack(image, attack_type, attack_param)
+
+
+# =========================
 # BLOCK-SVD WATERMARKING
 # =========================
 
@@ -427,7 +528,7 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
     block_size = 8
 
     for i in range(wm_h):
-        for j in range(wm_w):
+            for j in range(wm_w):
             x = i * block_size
             y = j * block_size
 
@@ -614,7 +715,9 @@ def extract_watermark_dct_dwt(original_image, watermarked_image, watermark_shape
             extracted[i, j] = 1 if np.mean(diffs) > 0 else 0
 
     return extracted
-    # =========================
+
+
+# =========================
 # DWT-DFT WATERMARKING
 # =========================
 
@@ -718,9 +821,7 @@ def embed_watermark_dct_svd(host_gray, watermark_binary, alpha=10):
     watermarked = cv2.idct(dct_w)
 
     return np.uint8(np.clip(watermarked, 0, 255))
-
-
-def extract_watermark_dct_svd(original_image, watermarked_image, watermark_shape):
+    def extract_watermark_dct_svd(original_image, watermarked_image, watermark_shape):
     original_float = np.float32(original_image)
     watermarked_float = np.float32(watermarked_image)
 
@@ -861,15 +962,8 @@ def run_embedding_method(method):
 
 st.sidebar.header(t["settings"])
 
-domain = st.sidebar.selectbox(
-    t["domain"],
-    domain_options[lang]
-)
-
-attack_type = st.sidebar.selectbox(
-    t["attack"],
-    attack_options[lang]
-)
+domain = st.sidebar.selectbox(t["domain"], domain_options[lang])
+attack_type = st.sidebar.selectbox(t["attack"], attack_options[lang])
 
 method_options = [
     "Block-SVD",
@@ -881,125 +975,103 @@ method_options = [
     "DWT-SVD"
 ]
 
-selected_method = st.sidebar.selectbox(
-    t["embedding_method"],
-    method_options
+selected_method = st.sidebar.selectbox(t["embedding_method"], method_options)
+
+channel_options_display = [
+    t["grayscale"],
+    t["red_channel"],
+    t["green_channel"],
+    t["blue_channel"]
+]
+
+channel_mode_display = st.sidebar.selectbox(
+    t["embedding_channel"],
+    channel_options_display
 )
+
+channel_mapping = {
+    t["grayscale"]: "Grayscale",
+    t["red_channel"]: "Red",
+    t["green_channel"]: "Green",
+    t["blue_channel"]: "Blue"
+}
+
+channel_mode = channel_mapping[channel_mode_display]
 
 recommended_alpha = predict_alpha_by_domain(domain)
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"### {t['adaptive_alpha']}")
 
-alpha_mode = st.sidebar.radio(
-    t["alpha_selection"],
-    [
-        t["recommended"],
-        t["manual"]
-    ]
-)
+alpha_mode = st.sidebar.radio(t["alpha_selection"], [t["recommended"], t["manual"]])
 
 if alpha_mode == t["recommended"]:
     predicted_alpha = recommended_alpha
 else:
-    predicted_alpha = st.sidebar.slider(
-        t["alpha_value"],
-        5,
-        50,
-        recommended_alpha,
-        step=5
-    )
+    predicted_alpha = st.sidebar.slider(t["alpha_value"], 5, 50, recommended_alpha, step=5)
 
-attack_type_normalized = normalize_attack_name(
-    attack_type
+st.sidebar.markdown("---")
+
+attack_mode_display = st.sidebar.radio(
+    t["attack_mode"],
+    [t["single_attack"], t["combined_attack"]]
 )
 
+attack_mode = "Combined Attack" if attack_mode_display == t["combined_attack"] else "Single Attack"
+
+combined_attack_options_display = [
+    t["jpeg_noise"],
+    t["jpeg_blur"],
+    t["jpeg_noise_blur"],
+    t["jpeg_noise_rotation"]
+]
+
+combined_attack_mapping = {
+    t["jpeg_noise"]: "JPEG + Noise",
+    t["jpeg_blur"]: "JPEG + Blur",
+    t["jpeg_noise_blur"]: "JPEG + Noise + Blur",
+    t["jpeg_noise_rotation"]: "JPEG + Noise + Rotation"
+}
+
+combined_attack_display = None
+combined_attack = None
+
+if attack_mode == "Combined Attack":
+    combined_attack_display = st.sidebar.selectbox(
+        t["combined_attack_type"],
+        combined_attack_options_display
+    )
+    combined_attack = combined_attack_mapping[combined_attack_display]
+
+attack_type_normalized = normalize_attack_name(attack_type)
+
 if attack_type_normalized == "JPEG Compression":
-    attack_param = st.sidebar.slider(
-        t["jpeg_quality"],
-        10,
-        100,
-        70
-    )
-
+    attack_param = st.sidebar.slider(t["jpeg_quality"], 10, 100, 70)
 elif attack_type_normalized == "Gaussian Noise":
-    attack_param = st.sidebar.slider(
-        t["noise_strength"],
-        0.01,
-        0.10,
-        0.03
-    )
-
+    attack_param = st.sidebar.slider(t["noise_strength"], 0.01, 0.10, 0.03)
 elif attack_type_normalized == "Salt & Pepper Noise":
     label = "Salt & Pepper intensivliyi" if lang == "az" else "Salt & Pepper Strength"
-
-    attack_param = st.sidebar.slider(
-        label,
-        0.01,
-        0.10,
-        0.03
-    )
-
+    attack_param = st.sidebar.slider(label, 0.01, 0.10, 0.03)
 elif attack_type_normalized == "Gaussian Blur":
-    attack_param = st.sidebar.slider(
-        t["blur_kernel"],
-        3,
-        9,
-        5,
-        step=2
-    )
-
+    attack_param = st.sidebar.slider(t["blur_kernel"], 3, 9, 5, step=2)
 elif attack_type_normalized == "Brightness Change":
     label = "Parlaqlıq səviyyəsi" if lang == "az" else "Brightness Level"
-
-    attack_param = st.sidebar.slider(
-        label,
-        -80,
-        80,
-        30
-    )
-
+    attack_param = st.sidebar.slider(label, -80, 80, 30)
 elif attack_type_normalized == "Contrast Change":
     label = "Kontrast səviyyəsi" if lang == "az" else "Contrast Level"
-
-    attack_param = st.sidebar.slider(
-        label,
-        0.5,
-        2.0,
-        1.3
-    )
-
+    attack_param = st.sidebar.slider(label, 0.5, 2.0, 1.3)
 elif attack_type_normalized == "Rotation":
     label = "Fırlatma bucağı" if lang == "az" else "Rotation Angle"
-
-    attack_param = st.sidebar.slider(
-        label,
-        -30,
-        30,
-        10
-    )
-
+    attack_param = st.sidebar.slider(label, -30, 30, 10)
 elif attack_type_normalized == "Cropping":
     label = "Kəsmə faizi" if lang == "az" else "Cropping Percentage"
-
-    attack_param = st.sidebar.slider(
-        label,
-        0.05,
-        0.30,
-        0.10
-    )
-
+    attack_param = st.sidebar.slider(label, 0.05, 0.30, 0.10)
 else:
     attack_param = 0
 
 st.sidebar.markdown("---")
 
-max_images = st.sidebar.slider(
-    t["max_images"],
-    1,
-    500,
-    50
-)
+max_images = st.sidebar.slider(t["max_images"], 1, 500, 50)
 
 uploaded_files = st.file_uploader(
     t["upload_host"],
@@ -1013,198 +1085,99 @@ if uploaded_files:
 
 watermark_type = st.sidebar.radio(
     t["watermark_type"],
-    [
-        t["default_watermark"],
-        t["upload_logo"],
-        t["text_watermark"]
-    ]
+    [t["default_watermark"], t["upload_logo"], t["text_watermark"]]
 )
 
 watermark_file = None
 watermark_text = ""
 
 if watermark_type == t["upload_logo"]:
-    watermark_file = st.file_uploader(
-        t["upload_wm"],
-        type=["png", "jpg", "jpeg"],
-        key="watermark_upload"
-    )
-
+    watermark_file = st.file_uploader(t["upload_wm"], type=["png", "jpg", "jpeg"], key="watermark_upload")
 elif watermark_type == t["text_watermark"]:
-    watermark_text = st.sidebar.text_input(
-        t["enter_watermark_text"],
-        value="AV"
-    )
-
-
-# =========================
-# METRIC EXPLANATIONS
-# =========================
+    watermark_text = st.sidebar.text_input(t["enter_watermark_text"], value="AV")
 
 with st.expander(t["metric_exp"]):
     st.write(f"**PSNR:** {t['psnr_exp']}")
     st.write(f"**SSIM:** {t['ssim_exp']}")
     st.write(f"**BER:** {t['ber_exp']}")
     st.write(f"**Correlation:** {t['corr_exp']}")
+
 # =========================
 # MAIN PROCESS
 # =========================
 
 if uploaded_files:
-
     uploaded_file = uploaded_files[0]
 
     image = Image.open(uploaded_file).convert("RGB")
     img_rgb = np.array(image)
     img_rgb = cv2.resize(img_rgb, (512, 512))
     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    host_image = get_host_channel(img_rgb, channel_mode)
 
     if watermark_type == t["upload_logo"] and watermark_file is not None:
-
         wm_img = Image.open(watermark_file).convert("L")
         wm_img = np.array(wm_img)
-        wm_img = cv2.resize(
-            wm_img,
-            (32, 32)
-        )
-
-        _, watermark_binary = cv2.threshold(
-            wm_img,
-            127,
-            1,
-            cv2.THRESH_BINARY
-        )
-
+        wm_img = cv2.resize(wm_img, (32, 32))
+        _, watermark_binary = cv2.threshold(wm_img, 127, 1, cv2.THRESH_BINARY)
     elif watermark_type == t["text_watermark"]:
-
-        watermark_binary = create_text_watermark(
-            watermark_text
-        )
-
+        watermark_binary = create_text_watermark(watermark_text)
     else:
-
         watermark_binary = create_default_watermark()
 
-    # =========================
-    # SELECTED METHOD RESULT
-    # =========================
-
-    embed_fn, extract_fn = run_embedding_method(
-        selected_method
-    )
+    embed_fn, extract_fn = run_embedding_method(selected_method)
 
     if embed_fn is None or extract_fn is None:
         st.error("Unknown embedding method selected.")
         st.stop()
 
-    watermarked = embed_fn(
-        img_gray,
-        watermark_binary,
-        alpha=predicted_alpha
-    )
+    watermarked = embed_fn(host_image, watermark_binary, alpha=predicted_alpha)
 
-    attacked = apply_attack(
+    attacked = apply_selected_attack(
         watermarked,
+        attack_mode,
         attack_type,
-        attack_param
+        attack_param,
+        combined_attack
     )
 
-    extracted = extract_fn(
-        img_gray,
-        attacked,
-        watermark_binary.shape
-    )
+    extracted = extract_fn(host_image, attacked, watermark_binary.shape)
 
-    psnr_val = calculate_psnr(
-        img_gray,
-        watermarked
-    )
+    psnr_val = calculate_psnr(host_image, watermarked)
+    ssim_val = calculate_ssim(host_image, watermarked)
+    ber_val = calculate_ber(watermark_binary, extracted)
+    corr_val = calculate_correlation(watermark_binary, extracted)
 
-    ssim_val = calculate_ssim(
-        img_gray,
-        watermarked
-    )
-
-    ber_val = calculate_ber(
-        watermark_binary,
-        extracted
-    )
-
-    corr_val = calculate_correlation(
-        watermark_binary,
-        extracted
-    )
-
-    score_val = calculate_score(
-        psnr_val,
-        ssim_val,
-        ber_val,
-        corr_val,
-        domain
-    )
-
-    # =========================
-    # COMPARISON ENGINE
-    # =========================
+    score_val = calculate_score(psnr_val, ssim_val, ber_val, corr_val, domain)
 
     comparison_results = []
     extraction_gallery = []
 
     for method_name in method_options:
-
         try:
-            embed_compare, extract_compare = run_embedding_method(
-                method_name
-            )
+            embed_compare, extract_compare = run_embedding_method(method_name)
 
             if embed_compare is None or extract_compare is None:
                 continue
 
-            wm_compare = embed_compare(
-                img_gray,
-                watermark_binary,
-                alpha=predicted_alpha
-            )
+            wm_compare = embed_compare(host_image, watermark_binary, alpha=predicted_alpha)
 
-            attacked_compare = apply_attack(
+            attacked_compare = apply_selected_attack(
                 wm_compare,
+                attack_mode,
                 attack_type,
-                attack_param
+                attack_param,
+                combined_attack
             )
 
-            extracted_compare = extract_compare(
-                img_gray,
-                attacked_compare,
-                watermark_binary.shape
-            )
+            extracted_compare = extract_compare(host_image, attacked_compare, watermark_binary.shape)
 
-            psnr_compare = calculate_psnr(
-                img_gray,
-                wm_compare
-            )
+            psnr_compare = calculate_psnr(host_image, wm_compare)
+            ssim_compare = calculate_ssim(host_image, wm_compare)
+            ber_compare = calculate_ber(watermark_binary, extracted_compare)
+            corr_compare = calculate_correlation(watermark_binary, extracted_compare)
 
-            ssim_compare = calculate_ssim(
-                img_gray,
-                wm_compare
-            )
-
-            ber_compare = calculate_ber(
-                watermark_binary,
-                extracted_compare
-            )
-
-            corr_compare = calculate_correlation(
-                watermark_binary,
-                extracted_compare
-            )
-
-            score_compare = calculate_score(
-                psnr_compare,
-                ssim_compare,
-                ber_compare,
-                corr_compare,
-                domain
-            )
+            score_compare = calculate_score(psnr_compare, ssim_compare, ber_compare, corr_compare, domain)
 
             comparison_results.append({
                 "Method": method_name,
@@ -1230,47 +1203,33 @@ if uploaded_files:
                 "Score": np.nan
             })
 
-    comparison_df = pd.DataFrame(
-        comparison_results
-    )
-
-    valid_comparison_df = comparison_df.dropna(
-        subset=["Score"]
-    )
+    comparison_df = pd.DataFrame(comparison_results)
+    valid_comparison_df = comparison_df.dropna(subset=["Score"])
 
     if not valid_comparison_df.empty:
-        best_row = valid_comparison_df.loc[
-            valid_comparison_df["Score"].idxmax()
-        ]
-
+        best_row = valid_comparison_df.loc[valid_comparison_df["Score"].idxmax()]
         recommended_method = best_row["Method"]
         recommended_score = best_row["Score"]
-
     else:
         recommended_method = selected_method
         recommended_score = score_val
 
-    # =========================
-    # SELECTED METHOD DISPLAY
-    # =========================
+    attack_display_name = combined_attack_display if attack_mode == "Combined Attack" else attack_type
+
+    watermarked_display = reconstruct_display_image(img_rgb, watermarked, channel_mode)
+    attacked_display = reconstruct_display_image(img_rgb, attacked, channel_mode)
 
     st.subheader(t["adaptive_decision"])
-
     st.write(f"{t['selected_domain']}: **{domain}**")
     st.write(f"{t['recommended_alpha']}: **{recommended_alpha}**")
     st.write(f"{t['selected_alpha']}: **{predicted_alpha}**")
     st.write(f"{t['method']}: **{selected_method}**")
+    st.write(f"{t['embedding_channel']}: **{channel_mode_display}**")
 
-    st.success(
-        f"{t['recommended_method']}: {recommended_method} | Score = {recommended_score}"
-    )
-
-    st.caption(
-        f"{t['recommendation_reason']}: {t['highest_score_reason']}"
-    )
+    st.success(f"{t['recommended_method']}: {recommended_method} | Score = {recommended_score}")
+    st.caption(f"{t['recommendation_reason']}: {t['highest_score_reason']}")
 
     col1, col2, col3, col4, col5 = st.columns(5)
-
     col1.metric("PSNR", f"{psnr_val:.2f} dB")
     col2.metric("SSIM", f"{ssim_val:.4f}")
     col3.metric("BER", f"{ber_val:.4f}")
@@ -1282,80 +1241,33 @@ if uploaded_files:
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
-        st.image(
-            img_gray,
-            caption=t["original"],
-            clamp=True
-        )
-
+        st.image(img_rgb if channel_mode != "Grayscale" else img_gray, caption=t["original"], clamp=True)
     with c2:
-        st.image(
-            watermark_binary * 255,
-            caption=t["input_wm"],
-            clamp=True
-        )
-
+        st.image(watermark_binary * 255, caption=t["input_wm"], clamp=True)
     with c3:
-        st.image(
-            watermarked,
-            caption=f"{t['watermarked']} α={predicted_alpha}",
-            clamp=True
-        )
-
+        st.image(watermarked_display, caption=f"{t['watermarked']} α={predicted_alpha}", clamp=True)
     with c4:
-        st.image(
-            attacked,
-            caption=f"{t['after_attack']}: {attack_type}",
-            clamp=True
-        )
-
+        st.image(attacked_display, caption=f"{t['after_attack']}: {attack_display_name}", clamp=True)
     with c5:
-        st.image(
-            extracted * 255,
-            caption=t["extracted"],
-            clamp=True
-        )
+        st.image(extracted * 255, caption=t["extracted"], clamp=True)
 
     st.subheader(t["result_table"])
 
     result_df = pd.DataFrame({
         t["metric"]: [
-            "Domain",
-            "Method",
-            "Recommended Alpha",
-            "Selected Alpha",
-            "Attack",
-            "PSNR",
-            "SSIM",
-            "BER",
-            "Correlation",
-            "Score"
+            "Domain", "Method", "Channel", "Attack Mode", "Recommended Alpha",
+            "Selected Alpha", "Attack", "PSNR", "SSIM", "BER", "Correlation", "Score"
         ],
         t["value"]: [
-            domain,
-            selected_method,
-            recommended_alpha,
-            predicted_alpha,
-            attack_type,
-            round(psnr_val, 4),
-            round(ssim_val, 4),
-            round(ber_val, 4),
-            round(corr_val, 4),
-            score_val
+            domain, selected_method, channel_mode, attack_mode, recommended_alpha,
+            predicted_alpha, attack_display_name, round(psnr_val, 4), round(ssim_val, 4),
+            round(ber_val, 4), round(corr_val, 4), score_val
         ]
     })
 
-    st.dataframe(
-        result_df,
-        use_container_width=True
-    )
-
-    # =========================
-    # BATCH PROCESSING SUMMARY + ZIP DOWNLOAD
-    # =========================
+    st.dataframe(result_df, use_container_width=True)
 
     if len(uploaded_files) > 1:
-
         batch_results = []
 
         watermarked_zip_buffer = io.BytesIO()
@@ -1372,70 +1284,41 @@ if uploaded_files:
             total_files = len(uploaded_files)
 
             for idx, file in enumerate(uploaded_files):
-
                 try:
-                    progress_text.write(
-                        f"Processing image {idx + 1}/{total_files}: {file.name}"
-                    )
+                    progress_text.write(f"Processing image {idx + 1}/{total_files}: {file.name}")
 
                     image_b = Image.open(file).convert("RGB")
                     img_rgb_b = np.array(image_b)
                     img_rgb_b = cv2.resize(img_rgb_b, (512, 512))
                     img_gray_b = cv2.cvtColor(img_rgb_b, cv2.COLOR_RGB2GRAY)
+                    host_image_b = get_host_channel(img_rgb_b, channel_mode)
 
-                    watermarked_b = embed_fn(
-                        img_gray_b,
-                        watermark_binary,
-                        alpha=predicted_alpha
-                    )
+                    watermarked_b = embed_fn(host_image_b, watermark_binary, alpha=predicted_alpha)
 
-                    attacked_b = apply_attack(
+                    attacked_b = apply_selected_attack(
                         watermarked_b,
+                        attack_mode,
                         attack_type,
-                        attack_param
+                        attack_param,
+                        combined_attack
                     )
 
-                    extracted_b = extract_fn(
-                        img_gray_b,
-                        attacked_b,
-                        watermark_binary.shape
-                    )
+                    extracted_b = extract_fn(host_image_b, attacked_b, watermark_binary.shape)
 
-                    psnr_b = calculate_psnr(img_gray_b, watermarked_b)
-                    ssim_b = calculate_ssim(img_gray_b, watermarked_b)
+                    psnr_b = calculate_psnr(host_image_b, watermarked_b)
+                    ssim_b = calculate_ssim(host_image_b, watermarked_b)
                     ber_b = calculate_ber(watermark_binary, extracted_b)
                     corr_b = calculate_correlation(watermark_binary, extracted_b)
-
-                    score_b = calculate_score(
-                        psnr_b,
-                        ssim_b,
-                        ber_b,
-                        corr_b,
-                        domain
-                    )
+                    score_b = calculate_score(psnr_b, ssim_b, ber_b, corr_b, domain)
 
                     clean_name = safe_filename(file.name)
 
-                    add_image_to_zip(
-                        watermarked_zip,
-                        "watermarked_images",
-                        f"{clean_name}_watermarked",
-                        watermarked_b
-                    )
+                    watermarked_b_display = reconstruct_display_image(img_rgb_b, watermarked_b, channel_mode)
+                    attacked_b_display = reconstruct_display_image(img_rgb_b, attacked_b, channel_mode)
 
-                    add_image_to_zip(
-                        attacked_zip,
-                        "attacked_images",
-                        f"{clean_name}_attacked",
-                        attacked_b
-                    )
-
-                    add_image_to_zip(
-                        extracted_zip,
-                        "extracted_watermarks",
-                        f"{clean_name}_extracted_watermark",
-                        extracted_b * 255
-                    )
+                    add_image_to_zip(watermarked_zip, "watermarked_images", f"{clean_name}_watermarked", watermarked_b_display)
+                    add_image_to_zip(attacked_zip, "attacked_images", f"{clean_name}_attacked", attacked_b_display)
+                    add_image_to_zip(extracted_zip, "extracted_watermarks", f"{clean_name}_extracted_watermark", extracted_b * 255)
 
                     batch_results.append({
                         "Image": file.name,
@@ -1468,18 +1351,11 @@ if uploaded_files:
 
         st.markdown("---")
         st.subheader(t["batch_summary"])
+        st.dataframe(batch_df, use_container_width=True)
 
-        st.dataframe(
-            batch_df,
-            use_container_width=True
-        )
-
-        avg_df = batch_df[
-            ["PSNR", "SSIM", "BER", "Correlation", "Score"]
-        ].mean(numeric_only=True)
+        avg_df = batch_df[["PSNR", "SSIM", "BER", "Correlation", "Score"]].mean(numeric_only=True)
 
         avg_col1, avg_col2, avg_col3, avg_col4, avg_col5 = st.columns(5)
-
         avg_col1.metric("Avg PSNR", f"{avg_df['PSNR']:.2f} dB")
         avg_col2.metric("Avg SSIM", f"{avg_df['SSIM']:.4f}")
         avg_col3.metric("Avg BER", f"{avg_df['BER']:.4f}")
@@ -1487,11 +1363,7 @@ if uploaded_files:
         avg_col5.metric("Avg Score", f"{avg_df['Score']:.4f}")
 
         st.subheader(t["batch_score_chart"])
-
-        batch_chart_df = batch_df[
-            ["Image", "Score"]
-        ].set_index("Image")
-
+        batch_chart_df = batch_df[["Image", "Score"]].set_index("Image")
         st.bar_chart(batch_chart_df)
 
         st.subheader(t["download_batch"])
@@ -1522,18 +1394,10 @@ if uploaded_files:
                 mime="application/zip"
             )
 
-    # =========================
-    # COMPARISON DISPLAY
-    # =========================
-
     st.markdown("---")
     st.subheader(t["comparison_title"])
     st.write(t["comparison_desc"])
-
-    st.dataframe(
-        comparison_df,
-        use_container_width=True
-    )
+    st.dataframe(comparison_df, use_container_width=True)
 
     st.subheader(t["imperceptibility"])
 
@@ -1541,16 +1405,12 @@ if uploaded_files:
 
     with chart_col1:
         st.write(t["psnr_chart"])
-        psnr_chart_df = comparison_df[
-            ["Method", "PSNR"]
-        ].set_index("Method")
+        psnr_chart_df = comparison_df[["Method", "PSNR"]].set_index("Method")
         st.bar_chart(psnr_chart_df)
 
     with chart_col2:
         st.write(t["ssim_chart"])
-        ssim_chart_df = comparison_df[
-            ["Method", "SSIM"]
-        ].set_index("Method")
+        ssim_chart_df = comparison_df[["Method", "SSIM"]].set_index("Method")
         st.bar_chart(ssim_chart_df)
 
     st.subheader(t["robustness"])
@@ -1559,40 +1419,27 @@ if uploaded_files:
 
     with chart_col3:
         st.write(t["ber_chart"])
-        ber_chart_df = comparison_df[
-            ["Method", "BER"]
-        ].set_index("Method")
+        ber_chart_df = comparison_df[["Method", "BER"]].set_index("Method")
         st.bar_chart(ber_chart_df)
 
     with chart_col4:
         st.write(t["corr_chart"])
-        corr_chart_df = comparison_df[
-            ["Method", "Correlation"]
-        ].set_index("Method")
+        corr_chart_df = comparison_df[["Method", "Correlation"]].set_index("Method")
         st.bar_chart(corr_chart_df)
 
     st.subheader(t["score_comparison"])
 
-    score_chart_df = comparison_df[
-        ["Method", "Score"]
-    ].set_index("Method")
-
+    score_chart_df = comparison_df[["Method", "Score"]].set_index("Method")
     st.bar_chart(score_chart_df)
 
     st.subheader(t["visual_gallery"])
 
     if extraction_gallery:
-        gallery_cols = st.columns(
-            len(extraction_gallery)
-        )
+        gallery_cols = st.columns(len(extraction_gallery))
 
         for idx, item in enumerate(extraction_gallery):
             with gallery_cols[idx]:
-                st.image(
-                    item["Extracted"] * 255,
-                    caption=item["Method"],
-                    clamp=True
-                )
+                st.image(item["Extracted"] * 255, caption=item["Method"], clamp=True)
 
 else:
     st.info(t["info"])
