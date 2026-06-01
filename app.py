@@ -822,8 +822,8 @@ def embed_watermark_dct_svd(host_gray, watermark_binary, alpha=10):
 
     return np.uint8(np.clip(watermarked, 0, 255))
     def extract_watermark_dct_svd(original_image, watermarked_image, watermark_shape):
-    original_float = np.float32(original_image)
-    watermarked_float = np.float32(watermarked_image)
+        original_float = np.float32(original_image)
+        watermarked_float = np.float32(watermarked_image)
 
     dct_o = cv2.dct(original_float)
     dct_w = cv2.dct(watermarked_float)
