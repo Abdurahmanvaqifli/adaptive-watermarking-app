@@ -972,10 +972,11 @@ else:
     attack_param = 0
 
 
-uploaded_file = st.file_uploader(
+uploaded_files = st.file_uploader(
     t["upload_host"],
     type=["png", "jpg", "jpeg"],
-    key="host_upload"
+    key="host_upload",
+    accept_multiple_files=True
 )
 
 watermark_type = st.sidebar.radio(
@@ -1019,15 +1020,14 @@ with st.expander(t["metric_exp"]):
 # MAIN PROCESS
 # =========================
 
-if uploaded_file is not None:
+if uploaded_files:
+
+    uploaded_file = uploaded_files[0]
 
     image = Image.open(uploaded_file).convert("RGB")
     img_rgb = np.array(image)
     img_rgb = cv2.resize(img_rgb, (512, 512))
-    img_gray = cv2.cvtColor(
-        img_rgb,
-        cv2.COLOR_RGB2GRAY
-    )
+    img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
 
     if watermark_type == t["upload_logo"] and watermark_file is not None:
 
@@ -1324,7 +1324,101 @@ if uploaded_file is not None:
         result_df,
         use_container_width=True
     )
+    # =========================
+# BATCH PROCESSING SUMMARY
+# =========================
 
+if len(uploaded_files) > 1:
+
+    batch_results = []
+
+    for file in uploaded_files:
+
+        try:
+            image_b = Image.open(file).convert("RGB")
+            img_rgb_b = np.array(image_b)
+            img_rgb_b = cv2.resize(img_rgb_b, (512, 512))
+            img_gray_b = cv2.cvtColor(img_rgb_b, cv2.COLOR_RGB2GRAY)
+
+            watermarked_b = embed_fn(
+                img_gray_b,
+                watermark_binary,
+                alpha=predicted_alpha
+            )
+
+            attacked_b = apply_attack(
+                watermarked_b,
+                attack_type,
+                attack_param
+            )
+
+            extracted_b = extract_fn(
+                img_gray_b,
+                attacked_b,
+                watermark_binary.shape
+            )
+
+            psnr_b = calculate_psnr(img_gray_b, watermarked_b)
+            ssim_b = calculate_ssim(img_gray_b, watermarked_b)
+            ber_b = calculate_ber(watermark_binary, extracted_b)
+            corr_b = calculate_correlation(watermark_binary, extracted_b)
+
+            score_b = calculate_score(
+                psnr_b,
+                ssim_b,
+                ber_b,
+                corr_b,
+                domain
+            )
+
+            batch_results.append({
+                "Image": file.name,
+                "PSNR": round(psnr_b, 4),
+                "SSIM": round(ssim_b, 4),
+                "BER": round(ber_b, 4),
+                "Correlation": round(corr_b, 4),
+                "Score": score_b
+            })
+
+        except Exception:
+            batch_results.append({
+                "Image": file.name,
+                "PSNR": np.nan,
+                "SSIM": np.nan,
+                "BER": np.nan,
+                "Correlation": np.nan,
+                "Score": np.nan
+            })
+
+    batch_df = pd.DataFrame(batch_results)
+
+    st.markdown("---")
+    st.subheader("Batch Processing Summary")
+
+    st.dataframe(
+        batch_df,
+        use_container_width=True
+    )
+
+    avg_df = batch_df[
+        ["PSNR", "SSIM", "BER", "Correlation", "Score"]
+    ].mean(numeric_only=True)
+
+    avg_col1, avg_col2, avg_col3, avg_col4, avg_col5 = st.columns(5)
+
+    avg_col1.metric("Avg PSNR", f"{avg_df['PSNR']:.2f} dB")
+    avg_col2.metric("Avg SSIM", f"{avg_df['SSIM']:.4f}")
+    avg_col3.metric("Avg BER", f"{avg_df['BER']:.4f}")
+    avg_col4.metric("Avg Correlation", f"{avg_df['Correlation']:.4f}")
+    avg_col5.metric("Avg Score", f"{avg_df['Score']:.4f}")
+
+    st.subheader("Batch Score Chart")
+
+    batch_chart_df = batch_df[
+        ["Image", "Score"]
+    ].set_index("Image")
+
+    st.bar_chart(batch_chart_df)
 
     # =========================
     # COMPARISON DISPLAY
