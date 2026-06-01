@@ -3,6 +3,9 @@ import cv2
 import numpy as np
 import pandas as pd
 import pywt
+import io
+import zipfile
+import re
 from PIL import Image
 from skimage.metrics import structural_similarity as ssim
 
@@ -77,6 +80,16 @@ T = {
         "recommended_method": "Tövsiyə olunan metod",
         "recommendation_reason": "Tövsiyə səbəbi",
         "highest_score_reason": "Cari alpha, watermark və attack parametrləri altında ən yüksək score göstərən metod.",
+        "max_images": "Maksimum şəkil sayı",
+        "batch_summary": "Batch emal nəticələri",
+        "batch_completed": "Batch emalı tamamlandı.",
+        "batch_score_chart": "Batch Score qrafiki",
+        "download_batch": "Batch nəticələrini yüklə",
+        "download_watermarked_zip": "Watermarked şəkilləri ZIP yüklə",
+        "download_attacked_zip": "Attacked şəkilləri ZIP yüklə",
+        "download_extracted_zip": "Çıxarılmış watermark-ları ZIP yüklə",
+        "score_comparison": "Score müqayisəsi",
+        "visual_gallery": "Vizual çıxarış qalereyası",
     },
     "en": {
         "title": "Context-Aware Adaptive Invisible Watermarking System",
@@ -132,6 +145,16 @@ T = {
         "recommended_method": "Recommended Method",
         "recommendation_reason": "Recommendation reason",
         "highest_score_reason": "The method with the highest score under the current alpha, watermark, and attack settings.",
+        "max_images": "Maximum images",
+        "batch_summary": "Batch Processing Summary",
+        "batch_completed": "Batch processing completed.",
+        "batch_score_chart": "Batch Score Chart",
+        "download_batch": "Download Batch Outputs",
+        "download_watermarked_zip": "Download Watermarked Images ZIP",
+        "download_attacked_zip": "Download Attacked Images ZIP",
+        "download_extracted_zip": "Download Extracted Watermarks ZIP",
+        "score_comparison": "Score Comparison",
+        "visual_gallery": "Visual Extraction Gallery",
     }
 }
 
@@ -263,6 +286,25 @@ def calculate_score(psnr_val, ssim_val, ber_val, corr_val, domain):
     return round(score, 4)
 
 # =========================
+# FILE / ZIP HELPERS
+# =========================
+
+def safe_filename(filename):
+    filename = filename.rsplit(".", 1)[0]
+    filename = re.sub(r"[^a-zA-Z0-9_-]", "_", filename)
+    return filename
+
+
+def add_image_to_zip(zip_file, folder_name, file_name, image_array):
+    image_array = np.uint8(np.clip(image_array, 0, 255))
+    success, encoded_image = cv2.imencode(".png", image_array)
+
+    if success:
+        zip_file.writestr(
+            f"{folder_name}/{file_name}.png",
+            encoded_image.tobytes()
+        )
+    # =========================
 # ATTACKS
 # =========================
 
@@ -345,6 +387,7 @@ def apply_attack(image, attack_type, param):
 
     return attacked
 
+
 # =========================
 # BLOCK-SVD WATERMARKING
 # =========================
@@ -362,7 +405,6 @@ def embed_watermark_svd_block(host_gray, watermark_binary, alpha=10):
             y = j * block_size
 
             block = watermarked[x:x+block_size, y:y+block_size]
-
             U, S, Vt = np.linalg.svd(block, full_matrices=False)
 
             if watermark_binary[i, j] == 1:
@@ -382,7 +424,6 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
 
     wm_h, wm_w = watermark_shape
     extracted = np.zeros((wm_h, wm_w), dtype=np.uint8)
-
     block_size = 8
 
     for i in range(wm_h):
@@ -400,6 +441,7 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
 
     return extracted
 
+
 # =========================
 # IMPROVED DCT WATERMARKING
 # =========================
@@ -409,7 +451,6 @@ def embed_watermark_dct_multi(host_gray, watermark_binary, alpha=10):
     watermarked = host_float.copy()
     wm_h, wm_w = watermark_binary.shape
     block_size = 8
-
     coeffs = [(3, 3), (3, 4), (4, 3), (4, 4)]
 
     for i in range(wm_h):
@@ -469,7 +510,6 @@ def extract_watermark_dct_multi(original_image, watermarked_image, watermark_sha
 
 def embed_watermark_dwt_ll(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
-
     LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
 
     wm_resized = cv2.resize(
@@ -479,7 +519,6 @@ def embed_watermark_dwt_ll(host_gray, watermark_binary, alpha=10):
     )
 
     wm_signal = np.where(wm_resized > 0.5, 1, -1)
-
     LL_w = LL + alpha * wm_signal
 
     watermarked = pywt.idwt2(
@@ -498,7 +537,6 @@ def extract_watermark_dwt_ll(original_image, watermarked_image, watermark_shape)
     LL_w, _ = pywt.dwt2(watermarked_float, "haar")
 
     diff = LL_w - LL_o
-
     extracted_large = np.where(diff > 0, 1, 0).astype(np.uint8)
 
     extracted = cv2.resize(
@@ -516,7 +554,6 @@ def extract_watermark_dwt_ll(original_image, watermarked_image, watermark_shape)
 
 def embed_watermark_dct_dwt(host_gray, watermark_binary, alpha=10):
     host_float = np.float32(host_gray)
-
     LL, (LH, HL, HH) = pywt.dwt2(host_float, "haar")
     LL_w = LL.copy()
 
@@ -531,7 +568,6 @@ def embed_watermark_dct_dwt(host_gray, watermark_binary, alpha=10):
 
             block = LL_w[x:x+block_size, y:y+block_size]
             dct_block = cv2.dct(block)
-
             bit = watermark_binary[i, j]
 
             for c in coeffs:
@@ -578,9 +614,7 @@ def extract_watermark_dct_dwt(original_image, watermarked_image, watermark_shape
             extracted[i, j] = 1 if np.mean(diffs) > 0 else 0
 
     return extracted
-
-
-# =========================
+    # =========================
 # DWT-DFT WATERMARKING
 # =========================
 
@@ -669,7 +703,6 @@ def embed_watermark_dct_svd(host_gray, watermark_binary, alpha=10):
             y = j * block_size
 
             block = dct_w[x:x+block_size, y:y+block_size]
-
             U, S, Vt = np.linalg.svd(block, full_matrices=False)
 
             if watermark_binary[i, j] == 1:
@@ -734,7 +767,6 @@ def embed_watermark_dwt_svd(host_gray, watermark_binary, alpha=10):
             y = j * block_size
 
             block = LL_w[x:x+block_size, y:y+block_size]
-
             U, S, Vt = np.linalg.svd(block, full_matrices=False)
 
             if watermark_binary[i, j] == 1:
@@ -781,23 +813,21 @@ def extract_watermark_dwt_svd(original_image, watermarked_image, watermark_shape
             extracted[i, j] = 1 if S_w[0] - S_o[0] > 0 else 0
 
     return extracted
-    # =========================
+
+
+# =========================
 # CONTEXT-AWARE ALPHA RULE
 # =========================
 
 def predict_alpha_by_domain(domain):
     if domain in ["Medical", "Tibbi"]:
         return 10
-
     elif domain in ["Cultural Heritage", "Mədəni irs"]:
         return 10
-
     elif domain in ["Satellite / GIS", "Peyk / GIS"]:
         return 20
-
     elif domain in ["Natural", "Təbii"]:
         return 10
-
     else:
         return 10
 
@@ -809,25 +839,18 @@ def predict_alpha_by_domain(domain):
 def run_embedding_method(method):
     if method == "Block-SVD":
         return embed_watermark_svd_block, extract_watermark_svd_block
-
     elif method == "Improved DCT":
         return embed_watermark_dct_multi, extract_watermark_dct_multi
-
     elif method == "Improved DWT":
         return embed_watermark_dwt_ll, extract_watermark_dwt_ll
-
     elif method == "DCT-DWT":
         return embed_watermark_dct_dwt, extract_watermark_dct_dwt
-
     elif method == "DWT-DFT":
         return embed_watermark_dwt_dft, extract_watermark_dwt_dft
-
     elif method == "DCT-SVD":
         return embed_watermark_dct_svd, extract_watermark_dct_svd
-
     elif method == "DWT-SVD":
         return embed_watermark_dwt_svd, extract_watermark_dwt_svd
-
     else:
         return None, None
 
@@ -878,7 +901,6 @@ alpha_mode = st.sidebar.radio(
 
 if alpha_mode == t["recommended"]:
     predicted_alpha = recommended_alpha
-
 else:
     predicted_alpha = st.sidebar.slider(
         t["alpha_value"],
@@ -887,7 +909,6 @@ else:
         recommended_alpha,
         step=5
     )
-
 
 attack_type_normalized = normalize_attack_name(
     attack_type
@@ -971,6 +992,14 @@ elif attack_type_normalized == "Cropping":
 else:
     attack_param = 0
 
+st.sidebar.markdown("---")
+
+max_images = st.sidebar.slider(
+    t["max_images"],
+    1,
+    500,
+    50
+)
 
 uploaded_files = st.file_uploader(
     t["upload_host"],
@@ -978,6 +1007,9 @@ uploaded_files = st.file_uploader(
     key="host_upload",
     accept_multiple_files=True
 )
+
+if uploaded_files:
+    uploaded_files = uploaded_files[:max_images]
 
 watermark_type = st.sidebar.radio(
     t["watermark_type"],
@@ -1014,8 +1046,6 @@ with st.expander(t["metric_exp"]):
     st.write(f"**SSIM:** {t['ssim_exp']}")
     st.write(f"**BER:** {t['ber_exp']}")
     st.write(f"**Correlation:** {t['corr_exp']}")
-
-
 # =========================
 # MAIN PROCESS
 # =========================
@@ -1054,7 +1084,6 @@ if uploaded_files:
     else:
 
         watermark_binary = create_default_watermark()
-
 
     # =========================
     # SELECTED METHOD RESULT
@@ -1113,7 +1142,6 @@ if uploaded_files:
         corr_val,
         domain
     )
-
 
     # =========================
     # COMPARISON ENGINE
@@ -1222,7 +1250,6 @@ if uploaded_files:
         recommended_method = selected_method
         recommended_score = score_val
 
-
     # =========================
     # SELECTED METHOD DISPLAY
     # =========================
@@ -1249,7 +1276,6 @@ if uploaded_files:
     col3.metric("BER", f"{ber_val:.4f}")
     col4.metric("Correlation", f"{corr_val:.4f}")
     col5.metric("Score", f"{score_val:.4f}")
-
 
     st.subheader(t["images"])
 
@@ -1290,7 +1316,6 @@ if uploaded_files:
             clamp=True
         )
 
-
     st.subheader(t["result_table"])
 
     result_df = pd.DataFrame({
@@ -1324,101 +1349,178 @@ if uploaded_files:
         result_df,
         use_container_width=True
     )
+
     # =========================
-# BATCH PROCESSING SUMMARY
-# =========================
+    # BATCH PROCESSING SUMMARY + ZIP DOWNLOAD
+    # =========================
 
-if len(uploaded_files) > 1:
+    if len(uploaded_files) > 1:
 
-    batch_results = []
+        batch_results = []
 
-    for file in uploaded_files:
+        watermarked_zip_buffer = io.BytesIO()
+        attacked_zip_buffer = io.BytesIO()
+        extracted_zip_buffer = io.BytesIO()
 
-        try:
-            image_b = Image.open(file).convert("RGB")
-            img_rgb_b = np.array(image_b)
-            img_rgb_b = cv2.resize(img_rgb_b, (512, 512))
-            img_gray_b = cv2.cvtColor(img_rgb_b, cv2.COLOR_RGB2GRAY)
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
 
-            watermarked_b = embed_fn(
-                img_gray_b,
-                watermark_binary,
-                alpha=predicted_alpha
+        with zipfile.ZipFile(watermarked_zip_buffer, "w", zipfile.ZIP_DEFLATED) as watermarked_zip, \
+             zipfile.ZipFile(attacked_zip_buffer, "w", zipfile.ZIP_DEFLATED) as attacked_zip, \
+             zipfile.ZipFile(extracted_zip_buffer, "w", zipfile.ZIP_DEFLATED) as extracted_zip:
+
+            total_files = len(uploaded_files)
+
+            for idx, file in enumerate(uploaded_files):
+
+                try:
+                    progress_text.write(
+                        f"Processing image {idx + 1}/{total_files}: {file.name}"
+                    )
+
+                    image_b = Image.open(file).convert("RGB")
+                    img_rgb_b = np.array(image_b)
+                    img_rgb_b = cv2.resize(img_rgb_b, (512, 512))
+                    img_gray_b = cv2.cvtColor(img_rgb_b, cv2.COLOR_RGB2GRAY)
+
+                    watermarked_b = embed_fn(
+                        img_gray_b,
+                        watermark_binary,
+                        alpha=predicted_alpha
+                    )
+
+                    attacked_b = apply_attack(
+                        watermarked_b,
+                        attack_type,
+                        attack_param
+                    )
+
+                    extracted_b = extract_fn(
+                        img_gray_b,
+                        attacked_b,
+                        watermark_binary.shape
+                    )
+
+                    psnr_b = calculate_psnr(img_gray_b, watermarked_b)
+                    ssim_b = calculate_ssim(img_gray_b, watermarked_b)
+                    ber_b = calculate_ber(watermark_binary, extracted_b)
+                    corr_b = calculate_correlation(watermark_binary, extracted_b)
+
+                    score_b = calculate_score(
+                        psnr_b,
+                        ssim_b,
+                        ber_b,
+                        corr_b,
+                        domain
+                    )
+
+                    clean_name = safe_filename(file.name)
+
+                    add_image_to_zip(
+                        watermarked_zip,
+                        "watermarked_images",
+                        f"{clean_name}_watermarked",
+                        watermarked_b
+                    )
+
+                    add_image_to_zip(
+                        attacked_zip,
+                        "attacked_images",
+                        f"{clean_name}_attacked",
+                        attacked_b
+                    )
+
+                    add_image_to_zip(
+                        extracted_zip,
+                        "extracted_watermarks",
+                        f"{clean_name}_extracted_watermark",
+                        extracted_b * 255
+                    )
+
+                    batch_results.append({
+                        "Image": file.name,
+                        "PSNR": round(psnr_b, 4),
+                        "SSIM": round(ssim_b, 4),
+                        "BER": round(ber_b, 4),
+                        "Correlation": round(corr_b, 4),
+                        "Score": score_b
+                    })
+
+                except Exception:
+                    batch_results.append({
+                        "Image": file.name,
+                        "PSNR": np.nan,
+                        "SSIM": np.nan,
+                        "BER": np.nan,
+                        "Correlation": np.nan,
+                        "Score": np.nan
+                    })
+
+                progress_bar.progress((idx + 1) / total_files)
+
+        progress_text.write(t["batch_completed"])
+
+        watermarked_zip_buffer.seek(0)
+        attacked_zip_buffer.seek(0)
+        extracted_zip_buffer.seek(0)
+
+        batch_df = pd.DataFrame(batch_results)
+
+        st.markdown("---")
+        st.subheader(t["batch_summary"])
+
+        st.dataframe(
+            batch_df,
+            use_container_width=True
+        )
+
+        avg_df = batch_df[
+            ["PSNR", "SSIM", "BER", "Correlation", "Score"]
+        ].mean(numeric_only=True)
+
+        avg_col1, avg_col2, avg_col3, avg_col4, avg_col5 = st.columns(5)
+
+        avg_col1.metric("Avg PSNR", f"{avg_df['PSNR']:.2f} dB")
+        avg_col2.metric("Avg SSIM", f"{avg_df['SSIM']:.4f}")
+        avg_col3.metric("Avg BER", f"{avg_df['BER']:.4f}")
+        avg_col4.metric("Avg Correlation", f"{avg_df['Correlation']:.4f}")
+        avg_col5.metric("Avg Score", f"{avg_df['Score']:.4f}")
+
+        st.subheader(t["batch_score_chart"])
+
+        batch_chart_df = batch_df[
+            ["Image", "Score"]
+        ].set_index("Image")
+
+        st.bar_chart(batch_chart_df)
+
+        st.subheader(t["download_batch"])
+
+        dl_col1, dl_col2, dl_col3 = st.columns(3)
+
+        with dl_col1:
+            st.download_button(
+                label=t["download_watermarked_zip"],
+                data=watermarked_zip_buffer.getvalue(),
+                file_name="watermarked_images.zip",
+                mime="application/zip"
             )
 
-            attacked_b = apply_attack(
-                watermarked_b,
-                attack_type,
-                attack_param
+        with dl_col2:
+            st.download_button(
+                label=t["download_attacked_zip"],
+                data=attacked_zip_buffer.getvalue(),
+                file_name="attacked_images.zip",
+                mime="application/zip"
             )
 
-            extracted_b = extract_fn(
-                img_gray_b,
-                attacked_b,
-                watermark_binary.shape
+        with dl_col3:
+            st.download_button(
+                label=t["download_extracted_zip"],
+                data=extracted_zip_buffer.getvalue(),
+                file_name="extracted_watermarks.zip",
+                mime="application/zip"
             )
-
-            psnr_b = calculate_psnr(img_gray_b, watermarked_b)
-            ssim_b = calculate_ssim(img_gray_b, watermarked_b)
-            ber_b = calculate_ber(watermark_binary, extracted_b)
-            corr_b = calculate_correlation(watermark_binary, extracted_b)
-
-            score_b = calculate_score(
-                psnr_b,
-                ssim_b,
-                ber_b,
-                corr_b,
-                domain
-            )
-
-            batch_results.append({
-                "Image": file.name,
-                "PSNR": round(psnr_b, 4),
-                "SSIM": round(ssim_b, 4),
-                "BER": round(ber_b, 4),
-                "Correlation": round(corr_b, 4),
-                "Score": score_b
-            })
-
-        except Exception:
-            batch_results.append({
-                "Image": file.name,
-                "PSNR": np.nan,
-                "SSIM": np.nan,
-                "BER": np.nan,
-                "Correlation": np.nan,
-                "Score": np.nan
-            })
-
-    batch_df = pd.DataFrame(batch_results)
-
-    st.markdown("---")
-    st.subheader("Batch Processing Summary")
-
-    st.dataframe(
-        batch_df,
-        use_container_width=True
-    )
-
-    avg_df = batch_df[
-        ["PSNR", "SSIM", "BER", "Correlation", "Score"]
-    ].mean(numeric_only=True)
-
-    avg_col1, avg_col2, avg_col3, avg_col4, avg_col5 = st.columns(5)
-
-    avg_col1.metric("Avg PSNR", f"{avg_df['PSNR']:.2f} dB")
-    avg_col2.metric("Avg SSIM", f"{avg_df['SSIM']:.4f}")
-    avg_col3.metric("Avg BER", f"{avg_df['BER']:.4f}")
-    avg_col4.metric("Avg Correlation", f"{avg_df['Correlation']:.4f}")
-    avg_col5.metric("Avg Score", f"{avg_df['Score']:.4f}")
-
-    st.subheader("Batch Score Chart")
-
-    batch_chart_df = batch_df[
-        ["Image", "Score"]
-    ].set_index("Image")
-
-    st.bar_chart(batch_chart_df)
 
     # =========================
     # COMPARISON DISPLAY
@@ -1432,7 +1534,6 @@ if len(uploaded_files) > 1:
         comparison_df,
         use_container_width=True
     )
-
 
     st.subheader(t["imperceptibility"])
 
@@ -1452,7 +1553,6 @@ if len(uploaded_files) > 1:
         ].set_index("Method")
         st.bar_chart(ssim_chart_df)
 
-
     st.subheader(t["robustness"])
 
     chart_col3, chart_col4 = st.columns(2)
@@ -1471,8 +1571,7 @@ if len(uploaded_files) > 1:
         ].set_index("Method")
         st.bar_chart(corr_chart_df)
 
-
-    st.subheader("Score Comparison")
+    st.subheader(t["score_comparison"])
 
     score_chart_df = comparison_df[
         ["Method", "Score"]
@@ -1480,8 +1579,7 @@ if len(uploaded_files) > 1:
 
     st.bar_chart(score_chart_df)
 
-
-    st.subheader("Visual Extraction Gallery")
+    st.subheader(t["visual_gallery"])
 
     if extraction_gallery:
         gallery_cols = st.columns(
