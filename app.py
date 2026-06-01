@@ -528,7 +528,7 @@ def extract_watermark_svd_block(original_image, watermarked_image, watermark_sha
     block_size = 8
 
     for i in range(wm_h):
-    for j in range(wm_w):
+        for j in range(wm_w):
             x = i * block_size
             y = j * block_size
 
