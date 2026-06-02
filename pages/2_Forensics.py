@@ -13,7 +13,7 @@ st.set_page_config(
 st.title("🔍 Digital Image Forensics")
 
 st.write(
-    "Upload an original image and a suspected image "
+    "Upload one original image and one or more suspected images "
     "to detect possible tampering."
 )
 
@@ -23,29 +23,24 @@ original_file = st.file_uploader(
     key="original"
 )
 
-tampered_file = st.file_uploader(
-    "Suspected Image",
+suspected_files = st.file_uploader(
+    "Suspected / Tampered Images",
     type=["png", "jpg", "jpeg"],
-    key="tampered"
+    key="suspected",
+    accept_multiple_files=True
 )
 
-if original_file and tampered_file:
 
-    original = Image.open(original_file).convert("RGB")
-    tampered = Image.open(tampered_file).convert("RGB")
+def analyze_tampering(original_rgb, suspected_rgb):
+    original_rgb = cv2.resize(original_rgb, (512, 512))
+    suspected_rgb = cv2.resize(suspected_rgb, (512, 512))
 
-    original = np.array(original)
-    tampered = np.array(tampered)
-
-    original = cv2.resize(original, (512, 512))
-    tampered = cv2.resize(tampered, (512, 512))
-
-    original_gray = cv2.cvtColor(original, cv2.COLOR_RGB2GRAY)
-    tampered_gray = cv2.cvtColor(tampered, cv2.COLOR_RGB2GRAY)
+    original_gray = cv2.cvtColor(original_rgb, cv2.COLOR_RGB2GRAY)
+    suspected_gray = cv2.cvtColor(suspected_rgb, cv2.COLOR_RGB2GRAY)
 
     score, diff = ssim(
         original_gray,
-        tampered_gray,
+        suspected_gray,
         full=True
     )
 
@@ -93,7 +88,7 @@ if original_file and tampered_file:
     )
 
     blended_heatmap = cv2.addWeighted(
-        tampered,
+        suspected_rgb,
         0.65,
         heatmap_rgb,
         0.35,
@@ -106,17 +101,14 @@ if original_file and tampered_file:
         cv2.CHAIN_APPROX_SIMPLE
     )
 
-    localization = tampered.copy()
+    localization = suspected_rgb.copy()
     region_data = []
-
     region_id = 1
 
     for contour in contours:
-
         area = cv2.contourArea(contour)
 
         if area > 40:
-
             x, y, w, h = cv2.boundingRect(contour)
 
             cv2.rectangle(
@@ -157,21 +149,124 @@ if original_file and tampered_file:
     else:
         largest_area = 0
 
+    return {
+        "original": original_rgb,
+        "suspected": suspected_rgb,
+        "ssim": score,
+        "diff": diff,
+        "threshold": threshold,
+        "heatmap": blended_heatmap,
+        "localization": localization,
+        "tamper_percentage": tamper_percentage,
+        "authenticity_score": authenticity_score,
+        "severity": severity,
+        "authenticity_status": authenticity_status,
+        "detected_regions": detected_regions,
+        "largest_area": largest_area,
+        "region_data": region_data
+    }
+
+
+if original_file and suspected_files:
+
+    original = Image.open(original_file).convert("RGB")
+    original = np.array(original)
+
+    st.subheader("Batch Tamper Detection Summary")
+
+    batch_results = []
+    analysis_outputs = []
+
+    progress_bar = st.progress(0)
+    progress_text = st.empty()
+
+    total_files = len(suspected_files)
+
+    for idx, suspected_file in enumerate(suspected_files):
+
+        progress_text.write(
+            f"Processing image {idx + 1}/{total_files}: {suspected_file.name}"
+        )
+
+        suspected = Image.open(suspected_file).convert("RGB")
+        suspected = np.array(suspected)
+
+        result = analyze_tampering(original, suspected)
+
+        batch_results.append({
+            "Image": suspected_file.name,
+            "SSIM": round(result["ssim"], 4),
+            "Tampered Area (%)": round(result["tamper_percentage"], 4),
+            "Authenticity Score (%)": round(result["authenticity_score"], 4),
+            "Severity": result["severity"],
+            "Status": result["authenticity_status"],
+            "Detected Regions": result["detected_regions"],
+            "Largest Region Area (px)": result["largest_area"]
+        })
+
+        analysis_outputs.append({
+            "file_name": suspected_file.name,
+            "result": result
+        })
+
+        progress_bar.progress((idx + 1) / total_files)
+
+    progress_text.write("Batch forensic analysis completed.")
+
+    batch_df = pd.DataFrame(batch_results)
+
+    st.dataframe(
+        batch_df,
+        use_container_width=True
+    )
+
+    avg_ssim = batch_df["SSIM"].mean()
+    avg_tamper = batch_df["Tampered Area (%)"].mean()
+    avg_auth = batch_df["Authenticity Score (%)"].mean()
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("Average SSIM", f"{avg_ssim:.4f}")
+    c2.metric("Average Tampered Area", f"{avg_tamper:.2f}%")
+    c3.metric("Average Authenticity", f"{avg_auth:.2f}%")
+
+    st.subheader("Authenticity Score Chart")
+
+    chart_df = batch_df[
+        ["Image", "Authenticity Score (%)"]
+    ].set_index("Image")
+
+    st.bar_chart(chart_df)
+
+    st.subheader("Detailed Analysis")
+
+    selected_image_name = st.selectbox(
+        "Select image for detailed forensic view",
+        [item["file_name"] for item in analysis_outputs]
+    )
+
+    selected_output = next(
+        item for item in analysis_outputs
+        if item["file_name"] == selected_image_name
+    )
+
+    result = selected_output["result"]
+
     st.subheader("Forensics Summary")
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("SSIM Similarity", f"{score:.4f}")
-    col2.metric("Tampered Area", f"{tamper_percentage:.2f}%")
-    col3.metric("Authenticity Score", f"{authenticity_score:.2f}%")
-    col4.metric("Severity", severity)
+    col1.metric("SSIM Similarity", f"{result['ssim']:.4f}")
+    col2.metric("Tampered Area", f"{result['tamper_percentage']:.2f}%")
+    col3.metric("Authenticity Score", f"{result['authenticity_score']:.2f}%")
+    col4.metric("Severity", result["severity"])
 
-    if authenticity_score >= 90:
-        st.success(authenticity_status)
-    elif authenticity_score >= 70:
-        st.warning(authenticity_status)
+    if result["authenticity_score"] >= 90:
+        st.success(result["authenticity_status"])
+    elif result["authenticity_score"] >= 70:
+        st.warning(result["authenticity_status"])
     else:
-        st.error(authenticity_status)
+        st.error(result["authenticity_status"])
 
     result_df = pd.DataFrame({
         "Metric": [
@@ -184,13 +279,13 @@ if original_file and tampered_file:
             "Largest Region Area (px)"
         ],
         "Value": [
-            round(score, 4),
-            round(tamper_percentage, 4),
-            round(authenticity_score, 4),
-            severity,
-            authenticity_status,
-            detected_regions,
-            largest_area
+            round(result["ssim"], 4),
+            round(result["tamper_percentage"], 4),
+            round(result["authenticity_score"], 4),
+            result["severity"],
+            result["authenticity_status"],
+            result["detected_regions"],
+            result["largest_area"]
         ]
     })
 
@@ -201,54 +296,54 @@ if original_file and tampered_file:
 
     st.subheader("Image Comparison")
 
-    c1, c2, c3 = st.columns(3)
+    img_col1, img_col2, img_col3 = st.columns(3)
 
-    with c1:
+    with img_col1:
         st.image(
-            original,
+            result["original"],
             caption="Original Image"
         )
 
-    with c2:
+    with img_col2:
         st.image(
-            tampered,
+            result["suspected"],
             caption="Suspected Image"
         )
 
-    with c3:
+    with img_col3:
         st.image(
-            localization,
+            result["localization"],
             caption="Tamper Localization"
         )
 
     st.subheader("Difference and Heatmap Analysis")
 
-    h1, h2, h3 = st.columns(3)
+    map_col1, map_col2, map_col3 = st.columns(3)
 
-    with h1:
+    with map_col1:
         st.image(
-            diff,
+            result["diff"],
             caption="SSIM Difference Map",
             clamp=True
         )
 
-    with h2:
+    with map_col2:
         st.image(
-            threshold,
+            result["threshold"],
             caption="Threshold Map",
             clamp=True
         )
 
-    with h3:
+    with map_col3:
         st.image(
-            blended_heatmap,
+            result["heatmap"],
             caption="Tamper Heatmap"
         )
 
     st.subheader("Tampered Region Statistics")
 
-    if region_data:
-        region_df = pd.DataFrame(region_data)
+    if result["region_data"]:
+        region_df = pd.DataFrame(result["region_data"])
         st.dataframe(
             region_df,
             use_container_width=True
@@ -257,4 +352,4 @@ if original_file and tampered_file:
         st.info("No significant tampered regions were detected.")
 
 else:
-    st.info("Please upload both original and suspected images.")
+    st.info("Please upload one original image and one or more suspected images.")
