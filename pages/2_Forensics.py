@@ -2,6 +2,8 @@ import streamlit as st
 import cv2
 import numpy as np
 import pandas as pd
+import io
+import html
 from PIL import Image
 from skimage.metrics import structural_similarity as ssim
 
@@ -10,26 +12,246 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔍 Digital Image Forensics")
+# =========================
+# LANGUAGE SYSTEM
+# =========================
 
-st.write(
-    "Upload one original image and one or more suspected images "
-    "to detect possible tampering."
+language = st.sidebar.selectbox(
+    "🌐 Language / Dil",
+    ["🇦🇿 Azərbaycan", "🇬🇧 English"]
 )
 
-original_file = st.file_uploader(
-    "Original Image",
-    type=["png", "jpg", "jpeg"],
-    key="original"
-)
+lang = "az" if language == "🇦🇿 Azərbaycan" else "en"
 
-suspected_files = st.file_uploader(
-    "Suspected / Tampered Images",
-    type=["png", "jpg", "jpeg"],
-    key="suspected",
-    accept_multiple_files=True
-)
+T = {
+    "az": {
+        "title": "🔍 Rəqəmsal Şəkil Forensikası",
+        "desc": "Mümkün təhrifləri aşkar etmək üçün bir orijinal şəkil və bir və ya bir neçə şübhəli şəkil yükləyin.",
+        "original_image": "Orijinal şəkil",
+        "suspected_images": "Şübhəli / dəyişdirilmiş şəkillər",
+        "info_upload": "Zəhmət olmasa bir orijinal şəkil və bir və ya bir neçə şübhəli şəkil yükləyin.",
+        "processing": "Emal olunur",
+        "completed": "Toplu forensik analiz tamamlandı.",
+        "batch_summary": "Toplu təhrif aşkarlanması nəticələri",
+        "image": "Şəkil",
+        "ssim": "SSIM",
+        "tampered_area": "Dəyişdirilmiş sahə (%)",
+        "authenticity_score": "Autentiklik göstəricisi (%)",
+        "severity": "Risk səviyyəsi",
+        "status": "Status",
+        "detected_regions": "Aşkarlanmış regionlar",
+        "largest_region": "Ən böyük region sahəsi (px)",
+        "avg_ssim": "Orta SSIM",
+        "avg_tampered": "Orta dəyişdirilmiş sahə",
+        "avg_auth": "Orta autentiklik",
+        "auth_chart": "Autentiklik göstəricisi qrafiki",
+        "detailed_analysis": "Ətraflı analiz",
+        "select_image": "Ətraflı forensik baxış üçün şəkil seçin",
+        "forensics_summary": "Forensik xülasə",
+        "ssim_similarity": "SSIM oxşarlığı",
+        "tampered_area_metric": "Dəyişdirilmiş sahə",
+        "authenticity_metric": "Autentiklik göstəricisi",
+        "image_comparison": "Şəkillərin müqayisəsi",
+        "suspected_image": "Şübhəli şəkil",
+        "tamper_localization": "Təhrif lokalizasiyası",
+        "diff_heatmap": "Fərq və istilik xəritəsi analizi",
+        "difference_map": "SSIM fərq xəritəsi",
+        "threshold_map": "Threshold xəritəsi",
+        "tamper_heatmap": "Təhrif istilik xəritəsi",
+        "region_stats": "Təhrif regionlarının statistikası",
+        "no_regions": "Əhəmiyyətli təhrif regionu aşkar edilmədi.",
+        "result_table": "Nəticə cədvəli",
+        "metric": "Metrik",
+        "value": "Dəyər",
+        "html_report": "HTML hesabatı yüklə",
+        "csv_report": "CSV nəticələrini yüklə",
+        "report_section": "Hesabat ixracı",
+        "low": "Aşağı",
+        "medium": "Orta",
+        "high": "Yüksək",
+        "authentic": "Autentik / Çox aşağı risk",
+        "suspicious": "Şübhəli / Yoxlama tələb olunur",
+        "likely_tampered": "Böyük ehtimalla dəyişdirilib",
+    },
+    "en": {
+        "title": "🔍 Digital Image Forensics",
+        "desc": "Upload one original image and one or more suspected images to detect possible tampering.",
+        "original_image": "Original Image",
+        "suspected_images": "Suspected / Tampered Images",
+        "info_upload": "Please upload one original image and one or more suspected images.",
+        "processing": "Processing",
+        "completed": "Batch forensic analysis completed.",
+        "batch_summary": "Batch Tamper Detection Summary",
+        "image": "Image",
+        "ssim": "SSIM",
+        "tampered_area": "Tampered Area (%)",
+        "authenticity_score": "Authenticity Score (%)",
+        "severity": "Severity",
+        "status": "Status",
+        "detected_regions": "Detected Regions",
+        "largest_region": "Largest Region Area (px)",
+        "avg_ssim": "Average SSIM",
+        "avg_tampered": "Average Tampered Area",
+        "avg_auth": "Average Authenticity",
+        "auth_chart": "Authenticity Score Chart",
+        "detailed_analysis": "Detailed Analysis",
+        "select_image": "Select image for detailed forensic view",
+        "forensics_summary": "Forensics Summary",
+        "ssim_similarity": "SSIM Similarity",
+        "tampered_area_metric": "Tampered Area",
+        "authenticity_metric": "Authenticity Score",
+        "image_comparison": "Image Comparison",
+        "suspected_image": "Suspected Image",
+        "tamper_localization": "Tamper Localization",
+        "diff_heatmap": "Difference and Heatmap Analysis",
+        "difference_map": "SSIM Difference Map",
+        "threshold_map": "Threshold Map",
+        "tamper_heatmap": "Tamper Heatmap",
+        "region_stats": "Tampered Region Statistics",
+        "no_regions": "No significant tampered regions were detected.",
+        "result_table": "Result Table",
+        "metric": "Metric",
+        "value": "Value",
+        "html_report": "Download HTML Report",
+        "csv_report": "Download CSV Results",
+        "report_section": "Report Export",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "authentic": "Authentic / Very Low Risk",
+        "suspicious": "Suspicious / Needs Review",
+        "likely_tampered": "Likely Tampered",
+    }
+}
 
+t = T[lang]
+
+st.title(t["title"])
+st.write(t["desc"])
+
+
+# =========================
+# HELPER FUNCTIONS
+# =========================
+
+def get_severity(tamper_percentage):
+    if tamper_percentage < 2:
+        return "Low"
+    elif tamper_percentage < 10:
+        return "Medium"
+    else:
+        return "High"
+
+
+def get_status(authenticity_score):
+    if authenticity_score >= 90:
+        return "Authentic / Very Low Risk"
+    elif authenticity_score >= 70:
+        return "Suspicious / Needs Review"
+    else:
+        return "Likely Tampered"
+
+
+def translate_severity(severity):
+    mapping = {
+        "Low": t["low"],
+        "Medium": t["medium"],
+        "High": t["high"]
+    }
+    return mapping.get(severity, severity)
+
+
+def translate_status(status):
+    mapping = {
+        "Authentic / Very Low Risk": t["authentic"],
+        "Suspicious / Needs Review": t["suspicious"],
+        "Likely Tampered": t["likely_tampered"]
+    }
+    return mapping.get(status, status)
+
+
+def dataframe_to_csv_bytes(df):
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def generate_html_report(batch_df, selected_name, result, region_df=None):
+    safe_title = html.escape(t["title"])
+    safe_selected = html.escape(selected_name)
+
+    batch_html = batch_df.to_html(index=False, escape=True)
+
+    if region_df is not None and not region_df.empty:
+        region_html = region_df.to_html(index=False, escape=True)
+    else:
+        region_html = f"<p>{html.escape(t['no_regions'])}</p>"
+
+    report = f"""
+    <!DOCTYPE html>
+    <html lang="{lang}">
+    <head>
+        <meta charset="UTF-8">
+        <title>{safe_title}</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 35px;
+                line-height: 1.5;
+                color: #222;
+            }}
+            h1, h2 {{
+                color: #1f4e79;
+            }}
+            table {{
+                border-collapse: collapse;
+                width: 100%;
+                margin-top: 12px;
+                margin-bottom: 25px;
+            }}
+            th, td {{
+                border: 1px solid #ccc;
+                padding: 8px;
+                text-align: left;
+            }}
+            th {{
+                background-color: #f2f2f2;
+            }}
+            .box {{
+                padding: 12px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                margin-bottom: 15px;
+                background-color: #fafafa;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>{safe_title}</h1>
+
+        <div class="box">
+            <h2>{html.escape(t['detailed_analysis'])}</h2>
+            <p><b>{html.escape(t['image'])}:</b> {safe_selected}</p>
+            <p><b>{html.escape(t['ssim_similarity'])}:</b> {result['ssim']:.4f}</p>
+            <p><b>{html.escape(t['tampered_area_metric'])}:</b> {result['tamper_percentage']:.2f}%</p>
+            <p><b>{html.escape(t['authenticity_metric'])}:</b> {result['authenticity_score']:.2f}%</p>
+            <p><b>{html.escape(t['severity'])}:</b> {html.escape(translate_severity(result['severity']))}</p>
+            <p><b>{html.escape(t['status'])}:</b> {html.escape(translate_status(result['authenticity_status']))}</p>
+            <p><b>{html.escape(t['detected_regions'])}:</b> {result['detected_regions']}</p>
+            <p><b>{html.escape(t['largest_region'])}:</b> {result['largest_area']}</p>
+        </div>
+
+        <h2>{html.escape(t['batch_summary'])}</h2>
+        {batch_html}
+
+        <h2>{html.escape(t['region_stats'])}</h2>
+        {region_html}
+    </body>
+    </html>
+    """
+
+    return report.encode("utf-8")
+    # =========================
+# TAMPER ANALYSIS
+# =========================
 
 def analyze_tampering(original_rgb, suspected_rgb):
     original_rgb = cv2.resize(original_rgb, (512, 512))
@@ -63,19 +285,8 @@ def analyze_tampering(original_rgb, suspected_rgb):
         min(100, (score * 100) - tamper_percentage)
     )
 
-    if tamper_percentage < 2:
-        severity = "Low"
-    elif tamper_percentage < 10:
-        severity = "Medium"
-    else:
-        severity = "High"
-
-    if authenticity_score >= 90:
-        authenticity_status = "Authentic / Very Low Risk"
-    elif authenticity_score >= 70:
-        authenticity_status = "Suspicious / Needs Review"
-    else:
-        authenticity_status = "Likely Tampered"
+    severity = get_severity(tamper_percentage)
+    authenticity_status = get_status(authenticity_score)
 
     heatmap = cv2.applyColorMap(
         inverse_diff,
@@ -167,12 +378,32 @@ def analyze_tampering(original_rgb, suspected_rgb):
     }
 
 
+# =========================
+# FILE UPLOADERS
+# =========================
+
+original_file = st.file_uploader(
+    t["original_image"],
+    type=["png", "jpg", "jpeg"],
+    key="original"
+)
+
+suspected_files = st.file_uploader(
+    t["suspected_images"],
+    type=["png", "jpg", "jpeg"],
+    key="suspected",
+    accept_multiple_files=True
+)
+# =========================
+# MAIN PROCESS
+# =========================
+
 if original_file and suspected_files:
 
     original = Image.open(original_file).convert("RGB")
     original = np.array(original)
 
-    st.subheader("Batch Tamper Detection Summary")
+    st.subheader(t["batch_summary"])
 
     batch_results = []
     analysis_outputs = []
@@ -185,7 +416,7 @@ if original_file and suspected_files:
     for idx, suspected_file in enumerate(suspected_files):
 
         progress_text.write(
-            f"Processing image {idx + 1}/{total_files}: {suspected_file.name}"
+            f"{t['processing']} {idx + 1}/{total_files}: {suspected_file.name}"
         )
 
         suspected = Image.open(suspected_file).convert("RGB")
@@ -194,14 +425,14 @@ if original_file and suspected_files:
         result = analyze_tampering(original, suspected)
 
         batch_results.append({
-            "Image": suspected_file.name,
-            "SSIM": round(result["ssim"], 4),
-            "Tampered Area (%)": round(result["tamper_percentage"], 4),
-            "Authenticity Score (%)": round(result["authenticity_score"], 4),
-            "Severity": result["severity"],
-            "Status": result["authenticity_status"],
-            "Detected Regions": result["detected_regions"],
-            "Largest Region Area (px)": result["largest_area"]
+            t["image"]: suspected_file.name,
+            t["ssim"]: round(result["ssim"], 4),
+            t["tampered_area"]: round(result["tamper_percentage"], 4),
+            t["authenticity_score"]: round(result["authenticity_score"], 4),
+            t["severity"]: translate_severity(result["severity"]),
+            t["status"]: translate_status(result["authenticity_status"]),
+            t["detected_regions"]: result["detected_regions"],
+            t["largest_region"]: result["largest_area"]
         })
 
         analysis_outputs.append({
@@ -211,7 +442,7 @@ if original_file and suspected_files:
 
         progress_bar.progress((idx + 1) / total_files)
 
-    progress_text.write("Batch forensic analysis completed.")
+    progress_text.write(t["completed"])
 
     batch_df = pd.DataFrame(batch_results)
 
@@ -220,28 +451,28 @@ if original_file and suspected_files:
         use_container_width=True
     )
 
-    avg_ssim = batch_df["SSIM"].mean()
-    avg_tamper = batch_df["Tampered Area (%)"].mean()
-    avg_auth = batch_df["Authenticity Score (%)"].mean()
+    avg_ssim = batch_df[t["ssim"]].mean()
+    avg_tamper = batch_df[t["tampered_area"]].mean()
+    avg_auth = batch_df[t["authenticity_score"]].mean()
 
     c1, c2, c3 = st.columns(3)
 
-    c1.metric("Average SSIM", f"{avg_ssim:.4f}")
-    c2.metric("Average Tampered Area", f"{avg_tamper:.2f}%")
-    c3.metric("Average Authenticity", f"{avg_auth:.2f}%")
+    c1.metric(t["avg_ssim"], f"{avg_ssim:.4f}")
+    c2.metric(t["avg_tampered"], f"{avg_tamper:.2f}%")
+    c3.metric(t["avg_auth"], f"{avg_auth:.2f}%")
 
-    st.subheader("Authenticity Score Chart")
+    st.subheader(t["auth_chart"])
 
     chart_df = batch_df[
-        ["Image", "Authenticity Score (%)"]
-    ].set_index("Image")
+        [t["image"], t["authenticity_score"]]
+    ].set_index(t["image"])
 
     st.bar_chart(chart_df)
 
-    st.subheader("Detailed Analysis")
+    st.subheader(t["detailed_analysis"])
 
     selected_image_name = st.selectbox(
-        "Select image for detailed forensic view",
+        t["select_image"],
         [item["file_name"] for item in analysis_outputs]
     )
 
@@ -252,38 +483,40 @@ if original_file and suspected_files:
 
     result = selected_output["result"]
 
-    st.subheader("Forensics Summary")
+    st.subheader(t["forensics_summary"])
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("SSIM Similarity", f"{result['ssim']:.4f}")
-    col2.metric("Tampered Area", f"{result['tamper_percentage']:.2f}%")
-    col3.metric("Authenticity Score", f"{result['authenticity_score']:.2f}%")
-    col4.metric("Severity", result["severity"])
+    col1.metric(t["ssim_similarity"], f"{result['ssim']:.4f}")
+    col2.metric(t["tampered_area_metric"], f"{result['tamper_percentage']:.2f}%")
+    col3.metric(t["authenticity_metric"], f"{result['authenticity_score']:.2f}%")
+    col4.metric(t["severity"], translate_severity(result["severity"]))
+
+    translated_status = translate_status(result["authenticity_status"])
 
     if result["authenticity_score"] >= 90:
-        st.success(result["authenticity_status"])
+        st.success(translated_status)
     elif result["authenticity_score"] >= 70:
-        st.warning(result["authenticity_status"])
+        st.warning(translated_status)
     else:
-        st.error(result["authenticity_status"])
+        st.error(translated_status)
 
     result_df = pd.DataFrame({
-        "Metric": [
-            "SSIM Similarity",
-            "Tampered Area (%)",
-            "Authenticity Score (%)",
-            "Severity Level",
-            "Authenticity Status",
-            "Number of Detected Regions",
-            "Largest Region Area (px)"
+        t["metric"]: [
+            t["ssim_similarity"],
+            t["tampered_area"],
+            t["authenticity_score"],
+            t["severity"],
+            t["status"],
+            t["detected_regions"],
+            t["largest_region"]
         ],
-        "Value": [
+        t["value"]: [
             round(result["ssim"], 4),
             round(result["tamper_percentage"], 4),
             round(result["authenticity_score"], 4),
-            result["severity"],
-            result["authenticity_status"],
+            translate_severity(result["severity"]),
+            translated_status,
             result["detected_regions"],
             result["largest_area"]
         ]
@@ -294,53 +527,53 @@ if original_file and suspected_files:
         use_container_width=True
     )
 
-    st.subheader("Image Comparison")
+    st.subheader(t["image_comparison"])
 
     img_col1, img_col2, img_col3 = st.columns(3)
 
     with img_col1:
         st.image(
             result["original"],
-            caption="Original Image"
+            caption=t["original_image"]
         )
 
     with img_col2:
         st.image(
             result["suspected"],
-            caption="Suspected Image"
+            caption=t["suspected_image"]
         )
 
     with img_col3:
         st.image(
             result["localization"],
-            caption="Tamper Localization"
+            caption=t["tamper_localization"]
         )
 
-    st.subheader("Difference and Heatmap Analysis")
+    st.subheader(t["diff_heatmap"])
 
     map_col1, map_col2, map_col3 = st.columns(3)
 
     with map_col1:
         st.image(
             result["diff"],
-            caption="SSIM Difference Map",
+            caption=t["difference_map"],
             clamp=True
         )
 
     with map_col2:
         st.image(
             result["threshold"],
-            caption="Threshold Map",
+            caption=t["threshold_map"],
             clamp=True
         )
 
     with map_col3:
         st.image(
             result["heatmap"],
-            caption="Tamper Heatmap"
+            caption=t["tamper_heatmap"]
         )
 
-    st.subheader("Tampered Region Statistics")
+    st.subheader(t["region_stats"])
 
     if result["region_data"]:
         region_df = pd.DataFrame(result["region_data"])
@@ -349,7 +582,42 @@ if original_file and suspected_files:
             use_container_width=True
         )
     else:
-        st.info("No significant tampered regions were detected.")
+        region_df = pd.DataFrame()
+        st.info(t["no_regions"])
+
+    # =========================
+    # REPORT EXPORT
+    # =========================
+
+    st.markdown("---")
+    st.subheader(t["report_section"])
+
+    report_col1, report_col2 = st.columns(2)
+
+    html_report = generate_html_report(
+        batch_df=batch_df,
+        selected_name=selected_image_name,
+        result=result,
+        region_df=region_df
+    )
+
+    csv_report = dataframe_to_csv_bytes(batch_df)
+
+    with report_col1:
+        st.download_button(
+            label=t["html_report"],
+            data=html_report,
+            file_name="forensics_report.html",
+            mime="text/html"
+        )
+
+    with report_col2:
+        st.download_button(
+            label=t["csv_report"],
+            data=csv_report,
+            file_name="forensics_batch_results.csv",
+            mime="text/csv"
+        )
 
 else:
-    st.info("Please upload one original image and one or more suspected images.")
+    st.info(t["info_upload"])
