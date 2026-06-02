@@ -1,6 +1,7 @@
 import streamlit as st
 import cv2
 import numpy as np
+import pandas as pd
 from PIL import Image
 from skimage.metrics import structural_similarity as ssim
 
@@ -39,15 +40,8 @@ if original_file and tampered_file:
     original = cv2.resize(original, (512, 512))
     tampered = cv2.resize(tampered, (512, 512))
 
-    original_gray = cv2.cvtColor(
-        original,
-        cv2.COLOR_RGB2GRAY
-    )
-
-    tampered_gray = cv2.cvtColor(
-        tampered,
-        cv2.COLOR_RGB2GRAY
-    )
+    original_gray = cv2.cvtColor(original, cv2.COLOR_RGB2GRAY)
+    tampered_gray = cv2.cvtColor(tampered, cv2.COLOR_RGB2GRAY)
 
     score, diff = ssim(
         original_gray,
@@ -57,12 +51,43 @@ if original_file and tampered_file:
 
     diff = (diff * 255).astype("uint8")
 
+    inverse_diff = 255 - diff
+
     threshold = cv2.threshold(
         diff,
         0,
         255,
         cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     )[1]
+
+    tampered_pixels = np.sum(threshold > 0)
+    total_pixels = threshold.size
+    tamper_percentage = (tampered_pixels / total_pixels) * 100
+
+    if tamper_percentage < 2:
+        severity = "Low"
+    elif tamper_percentage < 10:
+        severity = "Medium"
+    else:
+        severity = "High"
+
+    heatmap = cv2.applyColorMap(
+        inverse_diff,
+        cv2.COLORMAP_JET
+    )
+
+    heatmap_rgb = cv2.cvtColor(
+        heatmap,
+        cv2.COLOR_BGR2RGB
+    )
+
+    blended_heatmap = cv2.addWeighted(
+        tampered,
+        0.65,
+        heatmap_rgb,
+        0.35,
+        0
+    )
 
     contours, _ = cv2.findContours(
         threshold,
@@ -88,9 +113,42 @@ if original_file and tampered_file:
                 2
             )
 
-    st.success(
-        f"SSIM Similarity Score: {score:.4f}"
+    st.subheader("Forensics Summary")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("SSIM Similarity", f"{score:.4f}")
+    col2.metric("Tampered Area", f"{tamper_percentage:.2f}%")
+    col3.metric("Severity", severity)
+
+    if severity == "Low":
+        st.success("Low-level modification detected.")
+    elif severity == "Medium":
+        st.warning("Medium-level tampering detected.")
+    else:
+        st.error("High-level tampering detected.")
+
+    result_df = pd.DataFrame({
+        "Metric": [
+            "SSIM Similarity",
+            "Tampered Area (%)",
+            "Severity Level",
+            "Number of Detected Regions"
+        ],
+        "Value": [
+            round(score, 4),
+            round(tamper_percentage, 4),
+            severity,
+            len(contours)
+        ]
+    })
+
+    st.dataframe(
+        result_df,
+        use_container_width=True
     )
+
+    st.subheader("Image Comparison")
 
     c1, c2, c3 = st.columns(3)
 
@@ -112,16 +170,29 @@ if original_file and tampered_file:
             caption="Tamper Localization"
         )
 
-    st.subheader("Difference Map")
+    st.subheader("Difference and Heatmap Analysis")
 
-    st.image(
-        diff,
-        clamp=True
-    )
+    h1, h2, h3 = st.columns(3)
 
-    st.subheader("Threshold Map")
+    with h1:
+        st.image(
+            diff,
+            caption="SSIM Difference Map",
+            clamp=True
+        )
 
-    st.image(
-        threshold,
-        clamp=True
-    )
+    with h2:
+        st.image(
+            threshold,
+            caption="Threshold Map",
+            clamp=True
+        )
+
+    with h3:
+        st.image(
+            blended_heatmap,
+            caption="Tamper Heatmap"
+        )
+
+else:
+    st.info("Please upload both original and suspected images.")
